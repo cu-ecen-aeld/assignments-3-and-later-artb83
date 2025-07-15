@@ -67,24 +67,24 @@ bool do_exec(int count, ...)
  *
 */
     va_end(args);
-    bool parent = true;
+
+    int fd;
+    //Check full path for a command and a file that is tested
+    if(-1==(fd=open(command[0], O_RDONLY, 0111)) || -1==(fd=open(command[count-1], O_RDONLY, 0111))) return false;
+    close(fd);
     int rv = 0;
     pid_t cpid = fork();
     if(cpid<0) return false;
-    char* args = command[1];
-    else if(cpid==0){
-    	parent = false;
-		int rv = execv(command[0], args);
-		if(rv==-1) return false;
+    if(cpid==0){
+    	printf("command[0]=%s, command[count-1]=%s\n", command[0], command[count-1]);
+		rv = execv(command[0], command);
+    	printf("Child execv rv=%d \n", rv);
     }
-    if(parent){
-    	printf("rv=%d before wait\n", rv);
+    if(cpid>0){
     	rv = wait(NULL);
-    	printf("rv=%d after wait\n", rv);
     }
-    if(rv==-1) return false;
 
-    return true;
+    return (rv==-1 ? false : true);
 }
 
 /**
