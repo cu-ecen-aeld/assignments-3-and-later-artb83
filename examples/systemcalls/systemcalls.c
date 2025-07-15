@@ -1,4 +1,9 @@
 #include "systemcalls.h"
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <sys/wait.h>
+#include <fcntl.h>
 
 /**
  * @param cmd the command to execute with system()
@@ -9,15 +14,16 @@
 */
 bool do_system(const char *cmd)
 {
-
+	bool res = true;
 /*
  * TODO  add your code here
  *  Call the system() function with the command set in the cmd
  *   and return a boolean true if the system() call completed with success
  *   or false() if it returned a failure
 */
+	if(0!=system(cmd))res=false;
 
-    return true;
+    return res;
 }
 
 /**
@@ -43,11 +49,13 @@ bool do_exec(int count, ...)
     for(i=0; i<count; i++)
     {
         command[i] = va_arg(args, char *);
+        printf("arg i=%d  %s\n", i, command[i]);
     }
     command[count] = NULL;
     // this line is to avoid a compile warning before your implementation is complete
     // and may be removed
     command[count] = command[count];
+    va_end(args);
 
 /*
  * TODO:
@@ -58,8 +66,23 @@ bool do_exec(int count, ...)
  *   as second argument to the execv() command.
  *
 */
-
     va_end(args);
+    bool parent = true;
+    int rv = 0;
+    pid_t cpid = fork();
+    if(cpid<0) return false;
+    char* args = command[1];
+    else if(cpid==0){
+    	parent = false;
+		int rv = execv(command[0], args);
+		if(rv==-1) return false;
+    }
+    if(parent){
+    	printf("rv=%d before wait\n", rv);
+    	rv = wait(NULL);
+    	printf("rv=%d after wait\n", rv);
+    }
+    if(rv==-1) return false;
 
     return true;
 }
@@ -92,8 +115,26 @@ bool do_exec_redirect(const char *outputfile, int count, ...)
  *   The rest of the behaviour is same as do_exec()
  *
 */
-
     va_end(args);
 
+    int fd = open(outputfile, O_CREAT|O_RDWR, S_IRUSR|S_IWUSR|S_IRWXG|S_IRGRP);
+    if(fd<0) return false;
+    pid_t cpid;
+    switch(cpid=fork()){
+    case -1:
+    	close(fd);
+    	return false;
+    case 0: //child process
+    	if(0>dup2(fd,1)) return false;
+    	int rv = execv(command[2], command);
+    	if(rv==-1){
+    		close(fd);
+    		return false;
+    	}
+    default:
+    	close(fd);
+    	if(-1==wait(NULL))return false;
+    }
+    close(fd);
     return true;
 }
