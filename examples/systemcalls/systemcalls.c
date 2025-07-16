@@ -49,7 +49,6 @@ bool do_exec(int count, ...)
     for(i=0; i<count; i++)
     {
         command[i] = va_arg(args, char *);
-        printf("arg i=%d  %s\n", i, command[i]);
     }
     command[count] = NULL;
     // this line is to avoid a compile warning before your implementation is complete
@@ -75,12 +74,10 @@ bool do_exec(int count, ...)
     int rv = 0;
     pid_t cpid = fork();
     if(cpid<0) return false;
-    if(cpid==0){
-    	printf("command[0]=%s, command[count-1]=%s\n", command[0], command[count-1]);
+    if(cpid==0){//child
 		rv = execv(command[0], command);
-    	printf("Child execv rv=%d \n", rv);
     }
-    if(cpid>0){
+    if(cpid>0){//parent
     	rv = wait(NULL);
     }
 
@@ -106,7 +103,7 @@ bool do_exec_redirect(const char *outputfile, int count, ...)
     // this line is to avoid a compile warning before your implementation is complete
     // and may be removed
     command[count] = command[count];
-
+    va_end(args);
 
 /*
  * TODO
@@ -115,26 +112,23 @@ bool do_exec_redirect(const char *outputfile, int count, ...)
  *   The rest of the behaviour is same as do_exec()
  *
 */
-    va_end(args);
-
-    int fd = open(outputfile, O_CREAT|O_RDWR, S_IRUSR|S_IWUSR|S_IRWXG|S_IRGRP);
-    if(fd<0) return false;
+    int fd;
+    if( -1==(fd=open(command[0], O_RDONLY, 0111)) ) return false;
+    close(fd);
+    if( -1==(fd=open(outputfile, O_CREAT|O_RDWR, S_IRUSR|S_IWUSR|S_IRWXG|S_IRGRP)) ) return false;
+    int rv=0;
     pid_t cpid;
-    switch(cpid=fork()){
-    case -1:
+    if(0>(cpid=fork())){
     	close(fd);
     	return false;
-    case 0: //child process
-    	if(0>dup2(fd,1)) return false;
-    	int rv = execv(command[2], command);
-    	if(rv==-1){
-    		close(fd);
-    		return false;
-    	}
-    default:
-    	close(fd);
-    	if(-1==wait(NULL))return false;
+    }
+    if(cpid==0){//child
+		rv |= dup2(fd,1);
+		rv |= execv(command[0], command);
+    }
+    if(cpid>0){//parent
+    	rv = wait(NULL);
     }
     close(fd);
-    return true;
+    return (rv==-1 ? false : true);
 }
