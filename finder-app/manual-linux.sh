@@ -6,7 +6,7 @@ set -e
 set -u
 
 OUTDIR=/tmp/aeld
-KERNEL_REPO=git://git.kernel.org/pub/scm/linux/kernel/git/stable/linux-stable.git
+KERNEL_REPO=https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux-stable.git
 KERNEL_VERSION=v5.15.163
 BUSYBOX_VERSION=1_33_1
 FINDER_APP_DIR=$(realpath $(dirname $0))
@@ -22,6 +22,15 @@ else
 fi
 
 mkdir -p ${OUTDIR}
+
+#Exit if failed to create outdir directory
+if [ ! -d "${OUTDIR}" ]; then
+	echo "Could not create a "$OUTDIR" directory"
+	exit 1
+else
+	echo $OUTDIR" created successfully"
+	echo
+fi
 
 cd "$OUTDIR"
 if [ ! -d "${OUTDIR}/linux-stable" ]; then
@@ -52,7 +61,7 @@ fi
 cd "$OUTDIR"
 if [ ! -d "${OUTDIR}/busybox" ]
 then
-git clone git://busybox.net/busybox.git
+git clone https://git.busybox.net/busybox
     cd busybox
     git checkout ${BUSYBOX_VERSION}
     # TODO:  Configure busybox
@@ -63,8 +72,8 @@ fi
 # TODO: Make and install busybox
 
 echo "Library dependencies"
-${CROSS_COMPILE}readelf -a bin/busybox | grep "program interpreter"
-${CROSS_COMPILE}readelf -a bin/busybox | grep "Shared library"
+${CROSS_COMPILE}readelf -a /usr/bin/busybox | grep "program interpreter"
+${CROSS_COMPILE}readelf -a /usr/bin/busybox | grep "Shared library"
 
 # TODO: Add library dependencies to rootfs
 
