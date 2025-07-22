@@ -72,8 +72,8 @@ fi
 # TODO: Make and install busybox
 
 echo "Library dependencies"
-${CROSS_COMPILE}readelf -a /usr/bin/busybox | grep "program interpreter"
-${CROSS_COMPILE}readelf -a /usr/bin/busybox | grep "Shared library"
+${CROSS_COMPILE}readelf -a bin/busybox | grep "program interpreter"
+${CROSS_COMPILE}readelf -a bin/busybox | grep "Shared library"
 
 # TODO: Add library dependencies to rootfs
 
