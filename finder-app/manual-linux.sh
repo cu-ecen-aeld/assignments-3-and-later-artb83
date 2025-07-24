@@ -41,9 +41,18 @@ fi
 if [ ! -e ${OUTDIR}/linux-stable/arch/${ARCH}/boot/Image ]; then
     cd linux-stable
     echo "Checking out version ${KERNEL_VERSION}"
-    git checkout ${KERNEL_VERSION}
-
+    git checkout ${KERNEL_VERSION} 
     # TODO: Add your kernel build steps here
+    # Deep clean
+    #make ARCH=arm64 CROSS_COMPILE=aarch64-none-linux-gnu- mrproper
+	# Generate default configuration for QEMU
+    #make ARCH=arm64 CROSS_COMPILE=aarch64-none-linux-gnu- defconfig 
+	# Build kernel image
+    #make -j6 ARCH=arm64 CROSS_COMPILE=aarch64-none-linux-gnu- all
+	# Build kernel modules
+    # make ARCH=arm64 CROSS_COMPILE=aarch64-none-linux-gnu- modules
+	# Build kernel device tree
+    #make ARCH=arm64 CROSS_COMPILE=aarch64-none-linux-gnu- dtbs  
 fi
 
 echo "Adding the Image in outdir"
@@ -57,33 +66,79 @@ then
 fi
 
 # TODO: Create necessary base directories
+sudo mkdir -p rootfs
+if [ ! -d ./rootfs ]; then
+	echo "Could not create a "$OUTDIR" directory"
+	exit 1
+else
+	cd rootfs
+fi
+echo
+echo "Creating necessary base directories"
+echo
+
+sudo mkdir -p ./bin ./dev ./etc ./lib ./lib64 ./proc ./sys ./sbin ./tmp ./home 
+sudo mkdir -p ./usr/bin ./usr/sbin ./usr/lib	
+sudo mkdir -p ./var/log
 
 cd "$OUTDIR"
 if [ ! -d "${OUTDIR}/busybox" ]
 then
-git clone https://git.busybox.net/busybox
+	git clone https://git.busybox.net/busybox
     cd busybox
     git checkout ${BUSYBOX_VERSION}
     # TODO:  Configure busybox
+    echo "Configure busybox"
+    make distclean
+    make defconfig
 else
     cd busybox
 fi
 
 # TODO: Make and install busybox
-
+echo "Make and install busybox"
+make -j6 ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} busybox
+sudo make -j6 CONFIG_PREFIX=${OUTDIR}/rootfs ARCH=arm64\
+ CROSS_COMPILE=/usr/local/arm-cross-compiler/arm-gnu-toolchain-13.3.rel1-x86_64-aarch64-none-linux-gnu/bin/aarch64-none-linux-gnu- install
+cd ${OUTDIR}/rootfs
+echo
 echo "Library dependencies"
 ${CROSS_COMPILE}readelf -a bin/busybox | grep "program interpreter"
 ${CROSS_COMPILE}readelf -a bin/busybox | grep "Shared library"
 
 # TODO: Add library dependencies to rootfs
+echo "Adding library dependencies to rootfs"
+sudo cp /usr/local/arm-cross-compiler/arm-gnu-toolchain-13.3.rel1-x86_64-aarch64-none-linux-gnu/aarch64-none-linux-gnu/libc/lib/ld-linux-aarch64.so.1 ${OUTDIR}/rootfs/lib
+
+sudo cp /usr/local/arm-cross-compiler/arm-gnu-toolchain-13.3.rel1-x86_64-aarch64-none-linux-gnu/aarch64-none-linux-gnu/libc/lib64/libm.so.6  ${OUTDIR}/rootfs/lib64
+
+sudo cp /usr/local/arm-cross-compiler/arm-gnu-toolchain-13.3.rel1-x86_64-aarch64-none-linux-gnu/aarch64-none-linux-gnu/libc/lib64/libresolv.so.2  ${OUTDIR}/rootfs/lib64
+
+sudo cp /usr/local/arm-cross-compiler/arm-gnu-toolchain-13.3.rel1-x86_64-aarch64-none-linux-gnu/aarch64-none-linux-gnu/libc/lib64/libc.so.6  ${OUTDIR}/rootfs/lib64
 
 # TODO: Make device nodes
+echo "Making device nodes"
+cd ${OUTDIR}/rootfs
+sudo mknod -m 666 dev/null c 1 3
+sudo mknod -m 600 dev/console c 5 1
 
 # TODO: Clean and build the writer utility
+echo "Clean and build the writer utility"
+cd ${OUTDIR}/rootfs/home
+sudo make clean
+sudo make CROSS_COMPILER=aarch64-none-linux-gnu- writer
 
 # TODO: Copy the finder related scripts and executables to the /home directory
 # on the target rootfs
 
+sudo cp ${FINDER_APP_DIR}/*.sh ${OUTDIR}/rootfs/home
+sudo cp ${FINDER_APP_DIR}/conf/*.txt ${OUTDIR}/rootfs/home
+
 # TODO: Chown the root directory
+sudo chown --recursive root:root ${OUTDIR}/rootfs
 
 # TODO: Create initramfs.cpio.gz
+cd ${OUTDIR}/rootfs
+find . | /usr/bin/cpio -H newc -ov --owner root:root > ${OUTDIR}/initramfs.cpio
+cd ${OUTDIR}
+gzip -f initramfs.cpio
