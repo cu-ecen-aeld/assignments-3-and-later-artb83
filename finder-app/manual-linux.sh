@@ -44,18 +44,19 @@ if [ ! -e ${OUTDIR}/linux-stable/arch/${ARCH}/boot/Image ]; then
     git checkout ${KERNEL_VERSION} 
     # TODO: Add your kernel build steps here
     # Deep clean
-    #make ARCH=arm64 CROSS_COMPILE=aarch64-none-linux-gnu- mrproper
+    make ARCH=arm64 CROSS_COMPILE=aarch64-none-linux-gnu- mrproper
 	# Generate default configuration for QEMU
-    #make ARCH=arm64 CROSS_COMPILE=aarch64-none-linux-gnu- defconfig 
+    make ARCH=arm64 CROSS_COMPILE=aarch64-none-linux-gnu- defconfig 
 	# Build kernel image
-    #make -j6 ARCH=arm64 CROSS_COMPILE=aarch64-none-linux-gnu- all
-	# Build kernel modules
+    make -j6 ARCH=arm64 CROSS_COMPILE=aarch64-none-linux-gnu- all
+	# Build kernel modules - skipped in this (3 part 2) assignment
     # make ARCH=arm64 CROSS_COMPILE=aarch64-none-linux-gnu- modules
 	# Build kernel device tree
-    #make ARCH=arm64 CROSS_COMPILE=aarch64-none-linux-gnu- dtbs  
+    make ARCH=arm64 CROSS_COMPILE=aarch64-none-linux-gnu- dtbs  
 fi
 
 echo "Adding the Image in outdir"
+sudo cp ${OUTDIR}/linux-stable/arch/${ARCH}/boot/Image ${OUTDIR}
 
 echo "Creating the staging directory for the root filesystem"
 cd "$OUTDIR"
@@ -77,8 +78,8 @@ echo
 echo "Creating necessary base directories"
 echo
 
-sudo mkdir -p ./bin ./dev ./etc ./lib ./lib64 ./proc ./sys ./sbin ./tmp ./home 
-sudo mkdir -p ./usr/bin ./usr/sbin ./usr/lib	
+sudo mkdir -p ./bin ./dev ./etc ./lib ./lib64 ./proc ./sys ./sbin ./tmp 
+sudo mkdir -p ./home/conf ./usr/bin ./usr/sbin ./usr/lib	
 sudo mkdir -p ./var/log
 
 cd "$OUTDIR"
@@ -124,15 +125,20 @@ sudo mknod -m 600 dev/console c 5 1
 
 # TODO: Clean and build the writer utility
 echo "Clean and build the writer utility"
-cd ${OUTDIR}/rootfs/home
-sudo make clean
-sudo make CROSS_COMPILER=aarch64-none-linux-gnu- writer
+cd ${FINDER_APP_DIR}
+make clean
+make CROSS_COMPILER=aarch64-none-linux-gnu- writer
+sudo cp writer ${OUTDIR}/rootfs/home
 
 # TODO: Copy the finder related scripts and executables to the /home directory
 # on the target rootfs
+echo "Copy the finder related scripts and executables to the /home directory on the target rootfs"
 
-sudo cp ${FINDER_APP_DIR}/*.sh ${OUTDIR}/rootfs/home
-sudo cp ${FINDER_APP_DIR}/conf/*.txt ${OUTDIR}/rootfs/home
+sudo cp ${FINDER_APP_DIR}/finder.sh ${OUTDIR}/rootfs/home
+sudo cp ${FINDER_APP_DIR}/finder-test.sh ${OUTDIR}/rootfs/home
+sudo cp ${FINDER_APP_DIR}/conf/assignment.txt ${OUTDIR}/rootfs/home/conf
+sudo cp ${FINDER_APP_DIR}/conf/username.txt ${OUTDIR}/rootfs/home/conf
+sudo cp ${FINDER_APP_DIR}/autorun-qemu.sh ${OUTDIR}/rootfs/home
 
 # TODO: Chown the root directory
 sudo chown --recursive root:root ${OUTDIR}/rootfs
