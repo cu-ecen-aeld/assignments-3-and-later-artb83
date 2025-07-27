@@ -116,8 +116,7 @@ sudo cp /usr/local/arm-cross-compiler/arm-gnu-toolchain-13.3.rel1-x86_64-aarch64
 sudo cp /usr/local/arm-cross-compiler/arm-gnu-toolchain-13.3.rel1-x86_64-aarch64-none-linux-gnu/aarch64-none-linux-gnu/libc/lib64/libresolv.so.2  ${OUTDIR}/rootfs/lib64
 
 sudo cp /usr/local/arm-cross-compiler/arm-gnu-toolchain-13.3.rel1-x86_64-aarch64-none-linux-gnu/aarch64-none-linux-gnu/libc/lib64/libc.so.6  ${OUTDIR}/rootfs/lib64
-sudo mkdir -p ${OUTDIR}/rootfs/usr/local/arm-cross-compiler/arm-gnu-toolchain-13.3.rel1-x86_64-aarch64-none-linux-gnu/bin
-sudo cp /usr/local/arm-cross-compiler/arm-gnu-toolchain-13.3.rel1-x86_64-aarch64-none-linux-gnu/bin/${CROSS_COMPILE}\gcc ${OUTDIR}/rootfs/usr/local/arm-cross-compiler/arm-gnu-toolchain-13.3.rel1-x86_64-aarch64-none-linux-gnu/bin
+
 
 # TODO: Make device nodes
 echo "Making device nodes"
@@ -128,8 +127,6 @@ sudo mknod -m 600 dev/console c 5 1
 # TODO: Clean and build the writer utility
 echo "Clean and build the writer utility"
 cd ${FINDER_APP_DIR}
-#make clean
-#make CROSS_COMPILER=aarch64-none-linux-gnu- writer
 sudo cp writer ${OUTDIR}/rootfs/home
 
 # TODO: Copy the finder related scripts and executables to the /home directory
@@ -147,6 +144,7 @@ sudo chown --recursive root:root ${OUTDIR}/rootfs
 
 # TODO: Create initramfs.cpio.gz
 cd ${OUTDIR}/rootfs
-find . | /usr/bin/cpio -H newc -ov --owner root:root > ${OUTDIR}/initramfs.cpio
+sudo find . | /usr/bin/cpio -H newc -ov --owner root:root > ${OUTDIR}/initramfs.cpio
 cd ${OUTDIR}
 gzip -f initramfs.cpio
+sudo chown --recursive root:root initramfs.cpio.gz
