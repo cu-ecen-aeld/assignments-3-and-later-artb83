@@ -55,8 +55,8 @@ if [ ! -e ${OUTDIR}/linux-stable/arch/${ARCH}/boot/Image ]; then
     make ARCH=arm64 CROSS_COMPILE=aarch64-none-linux-gnu- dtbs  
 fi
 
-echo "Adding the Image in outdir"
-sudo cp ${OUTDIR}/linux-stable/arch/${ARCH}/boot/Image ${OUTDIR}
+echo "Adding the Image in outdir "${OUTDIR}
+cp ${OUTDIR}/linux-stable/arch/${ARCH}/boot/Image ${OUTDIR}
 
 echo "Creating the staging directory for the root filesystem"
 cd "$OUTDIR"
@@ -136,7 +136,7 @@ echo "Copy the finder related scripts and executables to the /home directory on 
 sudo cp ${FINDER_APP_DIR}/finder.sh ${OUTDIR}/rootfs/home
 sudo cp ${FINDER_APP_DIR}/finder-test.sh ${OUTDIR}/rootfs/home
 sudo cp ${FINDER_APP_DIR}/conf/assignment.txt ${OUTDIR}/rootfs/home/conf
-sudo cp ${FINDER_APP_DIR}/conf/username.txt ${OUTDIR}/rootfs/home/conf
+sudo cp ${FINDER_APP_DIR}/conf/username.txt ${OUTDIR}q/rootfs/home/conf
 sudo cp ${FINDER_APP_DIR}/autorun-qemu.sh ${OUTDIR}/rootfs/home
 
 # TODO: Chown the root directory
