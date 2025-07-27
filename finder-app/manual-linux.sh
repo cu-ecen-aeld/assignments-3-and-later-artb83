@@ -135,8 +135,12 @@ echo "Copy the finder related scripts and executables to the /home directory on 
 sudo cp ${FINDER_APP_DIR}/finder.sh ${OUTDIR}/rootfs/home
 sudo cp ${FINDER_APP_DIR}/finder-test.sh ${OUTDIR}/rootfs/home
 sudo cp ${FINDER_APP_DIR}/conf/assignment.txt ${OUTDIR}/rootfs/home/conf
-sudo cp ${FINDER_APP_DIR}/conf/username.txt ${OUTDIR}q/rootfs/home/conf
+sudo cp ${FINDER_APP_DIR}/conf/username.txt ${OUTDIR}/rootfs/home/conf
 sudo cp ${FINDER_APP_DIR}/autorun-qemu.sh ${OUTDIR}/rootfs/home
+
+echo "Show outdir rootfs and rootfs/home content"
+echo ${OUTDIR}"/rootfs/home content"
+ls -l ${OUTDIR}/rootfs/home
 
 # TODO: Chown the root directory
 sudo chown --recursive root:root ${OUTDIR}/rootfs
@@ -144,6 +148,10 @@ sudo chown --recursive root:root ${OUTDIR}/rootfs
 # TODO: Create initramfs.cpio.gz
 cd ${OUTDIR}/rootfs
 sudo find . | /usr/bin/cpio -H newc -ov --owner root:root > ${OUTDIR}/initramfs.cpio
+echo ${OUTDIR}"/rootfs content"
+ls -l 
 cd ${OUTDIR}
 gzip -f initramfs.cpio
 sudo chown --recursive root:root initramfs.cpio.gz
+echo ${OUTDIR}" content - End of manual-linux.sh"
+ls -l
