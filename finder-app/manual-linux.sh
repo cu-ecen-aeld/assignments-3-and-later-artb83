@@ -99,7 +99,9 @@ fi
 # TODO: Make and install busybox
 echo "Make and install busybox"
 make -j6 ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} busybox
+echo "Complete busybox make"
 sudo make -j6 CONFIG_PREFIX=${OUTDIR}/rootfs ARCH=arm64 CROSS_COMPILE=/usr/local/arm-cross-compiler/arm-gnu-toolchain-13.3.rel1-x86_64-aarch64-none-linux-gnu/bin/aarch64-none-linux-gnu- install
+echo "Complete busybox install"
 cd ${OUTDIR}/rootfs
 echo
 echo "Library dependencies"
