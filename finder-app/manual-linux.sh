@@ -71,9 +71,9 @@ sudo mkdir -p rootfs
 if [ ! -d ./rootfs ]; then
 	echo "Could not create a "$OUTDIR" directory"
 	exit 1
-else
-	cd rootfs
 fi
+
+cd rootfs
 echo
 echo "Creating necessary base directories"
 echo
@@ -100,10 +100,12 @@ fi
 echo "Make and install busybox"
 make -j6 ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} busybox
 echo "Complete busybox make"
-sudo make -j6 CONFIG_PREFIX=${OUTDIR}/rootfs ARCH=arm64 CROSS_COMPILE=/usr/local/arm-cross-compiler/arm-gnu-toolchain-13.3.rel1-x86_64-aarch64-none-linux-gnu/bin/aarch64-none-linux-gnu- install
+#sudo make -j6 CONFIG_PREFIX=${OUTDIR}/rootfs ARCH=arm64 CROSS_COMPILE=/usr/local/arm-cross-compiler/arm-gnu-toolchain-13.3.rel1-x86_64-aarch64-none-linux-gnu/bin/aarch64-none-linux-gnu- install
+sudo make -j6 CONFIG_PREFIX=${OUTDIR}/rootfs ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} install
 echo "Complete busybox install"
 cd ${OUTDIR}/rootfs
 echo
+
 echo "Library dependencies"
 ${CROSS_COMPILE}readelf -a bin/busybox | grep "program interpreter"
 ${CROSS_COMPILE}readelf -a bin/busybox | grep "Shared library"
@@ -111,13 +113,10 @@ ${CROSS_COMPILE}readelf -a bin/busybox | grep "Shared library"
 # TODO: Add library dependencies to rootfs
 echo "Adding library dependencies to rootfs"
 sudo cp /usr/local/arm-cross-compiler/arm-gnu-toolchain-13.3.rel1-x86_64-aarch64-none-linux-gnu/aarch64-none-linux-gnu/libc/lib/ld-linux-aarch64.so.1 ${OUTDIR}/rootfs/lib
-
-sudo cp /usr/local/arm-cross-compiler/arm-gnu-toolchain-13.3.rel1-x86_64-aarch64-none-linux-gnu/aarch64-none-linux-gnu/libc/lib64/libm.so.6  ${OUTDIR}/rootfs/lib64
-
-sudo cp /usr/local/arm-cross-compiler/arm-gnu-toolchain-13.3.rel1-x86_64-aarch64-none-linux-gnu/aarch64-none-linux-gnu/libc/lib64/libresolv.so.2  ${OUTDIR}/rootfs/lib64
-
-sudo cp /usr/local/arm-cross-compiler/arm-gnu-toolchain-13.3.rel1-x86_64-aarch64-none-linux-gnu/aarch64-none-linux-gnu/libc/lib64/libc.so.6  ${OUTDIR}/rootfs/lib64
-
+sudo cp /usr/local/arm-cross-compiler/arm-gnu-toolchain-13.3.rel1-x86_64-aarch64-none-linux-gnu/aarch64-none-linux-gnu/libc/lib64/libm.so.6           ${OUTDIR}/rootfs/lib64
+sudo cp /usr/local/arm-cross-compiler/arm-gnu-toolchain-13.3.rel1-x86_64-aarch64-none-linux-gnu/aarch64-none-linux-gnu/libc/lib64/libresolv.so.2      ${OUTDIR}/rootfs/lib64
+sudo cp /usr/local/arm-cross-compiler/arm-gnu-toolchain-13.3.rel1-x86_64-aarch64-none-linux-gnu/aarch64-none-linux-gnu/libc/lib64/libc.so.6           ${OUTDIR}/rootfs/lib64
+echo "Added library dependencies to rootfs"
 
 # TODO: Make device nodes
 echo "Making device nodes"
@@ -126,7 +125,7 @@ sudo mknod -m 666 dev/null c 1 3
 sudo mknod -m 600 dev/console c 5 1
 
 # TODO: Clean and build the writer utility
-echo "Clean and build the writer utility"
+echo "Copy the writer utility"
 cd ${FINDER_APP_DIR}
 sudo cp writer ${OUTDIR}/rootfs/home
 
@@ -140,7 +139,8 @@ sudo cp ${FINDER_APP_DIR}/conf/assignment.txt ${OUTDIR}/rootfs/home/conf
 sudo cp ${FINDER_APP_DIR}/conf/username.txt ${OUTDIR}/rootfs/home/conf
 sudo cp ${FINDER_APP_DIR}/autorun-qemu.sh ${OUTDIR}/rootfs/home
 
-echo "Show outdir rootfs and rootfs/home content"
+echo "Show "${OUTDIR}"/rootfs and rootfs/home content"
+ls -l ${OUTDIR}/rootfs
 echo ${OUTDIR}"/rootfs/home content"
 ls -l ${OUTDIR}/rootfs/home
 
@@ -148,12 +148,14 @@ ls -l ${OUTDIR}/rootfs/home
 sudo chown --recursive root:root ${OUTDIR}/rootfs
 
 # TODO: Create initramfs.cpio.gz
+echo "Create initramfs.cpio.gz"
 cd ${OUTDIR}/rootfs
 sudo find . | /usr/bin/cpio -H newc -ov --owner root:root > ${OUTDIR}/initramfs.cpio
-echo ${OUTDIR}"/rootfs content"
+echo "Show "${OUTDIR}"/rootfs content"
 ls -l 
 cd ${OUTDIR}
 gzip -f initramfs.cpio
 sudo chown --recursive root:root initramfs.cpio.gz
+sudo chown --recursive root:root ./Image
 echo ${OUTDIR}" content - End of manual-linux.sh"
 ls -l
