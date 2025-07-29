@@ -49,8 +49,8 @@ if [ ! -e ${OUTDIR}/linux-stable/arch/${ARCH}/boot/Image ]; then
     make ARCH=arm64 CROSS_COMPILE=aarch64-none-linux-gnu- defconfig 
 	# Build kernel image
     make -j6 ARCH=arm64 CROSS_COMPILE=aarch64-none-linux-gnu- all
-	# Build kernel modules - skipped in this (3 part 2) assignment
-    # make ARCH=arm64 CROSS_COMPILE=aarch64-none-linux-gnu- modules
+	# Build kernel modules - advised to be skipped in this (3 part 2) assignment
+    make ARCH=arm64 CROSS_COMPILE=aarch64-none-linux-gnu- modules
 	# Build kernel device tree
     make ARCH=arm64 CROSS_COMPILE=aarch64-none-linux-gnu- dtbs  
 fi
@@ -99,11 +99,8 @@ fi
 # TODO: Make and install busybox
 echo "Make and install busybox"
 make -j6 ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE}
-#make -j6 ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} busybox
 echo "Complete busybox make"
-
-#sudo make -j6 CONFIG_PREFIX=${OUTDIR}/rootfs ARCH=arm64 CROSS_COMPILE=/usr/local/arm-cross-compiler/arm-gnu-toolchain-13.3.rel1-x86_64-aarch64-none-linux-gnu/bin/aarch64-none-linux-gnu- install
-make -j6 CONFIG_PREFIX=${OUTDIR}/rootfs ARCH=arm64 CROSS_COMPILE=${CROSS_COMPILE} install
+sudo make -j6 CONFIG_PREFIX=${OUTDIR}/rootfs ARCH=arm64 CROSS_COMPILE=${CROSS_COMPILE} install
 echo "Complete busybox install"
 cd ${OUTDIR}/rootfs
 echo
@@ -112,7 +109,7 @@ ${CROSS_COMPILE}readelf -a bin/busybox | grep "program interpreter"
 ${CROSS_COMPILE}readelf -a bin/busybox | grep "Shared library"
 
 # TODO: Add library dependencies to rootfs
-echo "Adding library dependencies to rootfs"
+echo "Adding busybox library dependencies to rootfs"
 BB_DEPS=${FINDER_APP_DIR}/busybox_deps
 cp ${BB_DEPS}/ld-linux-aarch64.so.1 ${OUTDIR}/rootfs/lib
 cp ${BB_DEPS}/libm.so.6             ${OUTDIR}/rootfs/lib64
@@ -131,11 +128,16 @@ cd ${OUTDIR}/rootfs
 sudo mknod -m 666 dev/null c 1 3
 sudo mknod -m 666 dev/console c 5 1
 
+
 # TODO: Clean and build the writer utility
 echo "Clean and build the writer utility"
 cd ${FINDER_APP_DIR}
-cp writer ${OUTDIR}/rootfs/home
-
+cp Makefile ${OUTDIR}/rootfs/home
+cp writer.c ${OUTDIR}/rootfs/home
+make clean
+make CROSS_COMPILE=${CROSS_COMPILE} writer
+ls -ltrs
+echo
 # TODO: Copy the finder related scripts and executables to the /home directory
 # on the target rootfs
 echo "Copy the finder related scripts and executables to the /home directory on the target rootfs"
@@ -154,3 +156,6 @@ cd ${OUTDIR}/rootfs
 sudo find . | /usr/bin/cpio -H newc -ov --owner root:root > ${OUTDIR}/initramfs.cpio
 cd ${OUTDIR}
 gzip -f initramfs.cpio
+ls -ltrs
+echo
+echo "Complete running manual-linux.sh"
