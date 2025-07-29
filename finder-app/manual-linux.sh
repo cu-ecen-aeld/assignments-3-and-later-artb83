@@ -111,10 +111,10 @@ ${CROSS_COMPILE}readelf -a bin/busybox | grep "Shared library"
 # TODO: Add library dependencies to rootfs
 echo "Adding busybox library dependencies to rootfs"
 BB_DEPS=${FINDER_APP_DIR}/busybox_deps
-cp ${BB_DEPS}/ld-linux-aarch64.so.1 ${OUTDIR}/rootfs/lib
-cp ${BB_DEPS}/libm.so.6             ${OUTDIR}/rootfs/lib64
-cp ${BB_DEPS}/libresolv.so.2        ${OUTDIR}/rootfs/lib64
-cp ${BB_DEPS}/libc.so.6             ${OUTDIR}/rootfs/lib64
+sudo cp ${BB_DEPS}/ld-linux-aarch64.so.1 ${OUTDIR}/rootfs/lib
+sudo cp ${BB_DEPS}/libm.so.6             ${OUTDIR}/rootfs/lib64
+sudo cp ${BB_DEPS}/libresolv.so.2        ${OUTDIR}/rootfs/lib64
+sudo cp ${BB_DEPS}/libc.so.6             ${OUTDIR}/rootfs/lib64
 
 #cp /usr/local/arm-cross-compiler/arm-gnu-toolchain-13.3.rel1-x86_64-aarch64-none-linux-gnu/aarch64-none-linux-gnu/libc/lib/ld-linux-aarch64.so.1 ${OUTDIR}/rootfs/lib
 #cp /usr/local/arm-cross-compiler/arm-gnu-toolchain-13.3.rel1-x86_64-aarch64-none-linux-gnu/aarch64-none-linux-gnu/libc/lib64/libm.so.6           ${OUTDIR}/rootfs/lib64
@@ -132,21 +132,21 @@ sudo mknod -m 666 dev/console c 5 1
 # TODO: Clean and build the writer utility
 echo "Clean and build the writer utility"
 cd ${FINDER_APP_DIR}
-cp Makefile ${OUTDIR}/rootfs/home
-cp writer.c ${OUTDIR}/rootfs/home
-make clean
-make CROSS_COMPILE=${CROSS_COMPILE} writer
+sudo cp Makefile ${OUTDIR}/rootfs/home
+sudo cp writer.c ${OUTDIR}/rootfs/home
+sudo make clean
+sudo make CROSS_COMPILE=${CROSS_COMPILE} writer
 ls -ltrs
 echo
 # TODO: Copy the finder related scripts and executables to the /home directory
 # on the target rootfs
 echo "Copy the finder related scripts and executables to the /home directory on the target rootfs"
 
-cp ${FINDER_APP_DIR}/finder.sh ${OUTDIR}/rootfs/home
-cp ${FINDER_APP_DIR}/finder-test.sh ${OUTDIR}/rootfs/home
-cp ${FINDER_APP_DIR}/conf/assignment.txt ${OUTDIR}/rootfs/home/conf
-cp ${FINDER_APP_DIR}/conf/username.txt ${OUTDIR}/rootfs/home/conf
-cp ${FINDER_APP_DIR}/autorun-qemu.sh ${OUTDIR}/rootfs/home
+sudo cp ${FINDER_APP_DIR}/finder.sh ${OUTDIR}/rootfs/home
+sudo cp ${FINDER_APP_DIR}/finder-test.sh ${OUTDIR}/rootfs/home
+sudo cp ${FINDER_APP_DIR}/conf/assignment.txt ${OUTDIR}/rootfs/home/conf
+sudo cp ${FINDER_APP_DIR}/conf/username.txt ${OUTDIR}/rootfs/home/conf
+sudo cp ${FINDER_APP_DIR}/autorun-qemu.sh ${OUTDIR}/rootfs/home
 
 # TODO: Chown the root directory
 sudo chown --recursive root:root ${OUTDIR}/rootfs
