@@ -138,6 +138,7 @@ sudo cp Makefile ${OUTDIR}/rootfs/home
 sudo cp writer.c ${OUTDIR}/rootfs/home
 sudo make clean
 sudo make CROSS_COMPILE=${CROSS_COMPILE} writer
+echo "Show "${FINDER_APP_DIR}
 ls -ltrs
 echo
 # TODO: Copy the finder related scripts and executables to the /home directory
