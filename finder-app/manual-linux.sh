@@ -50,9 +50,9 @@ if [ ! -e ${OUTDIR}/linux-stable/arch/${ARCH}/boot/Image ]; then
 	# Build kernel image
     make -j6 ARCH=arm64 CROSS_COMPILE=aarch64-none-linux-gnu- all
 	# Build kernel modules - advised to be skipped in this (3 part 2) assignment
-    make ARCH=arm64 CROSS_COMPILE=aarch64-none-linux-gnu- modules
+    # make ARCH=arm64 CROSS_COMPILE=aarch64-none-linux-gnu- modules
 	# Build kernel device tree
-    make ARCH=arm64 CROSS_COMPILE=aarch64-none-linux-gnu- dtbs  
+    make -j6 ARCH=arm64 CROSS_COMPILE=aarch64-none-linux-gnu- dtbs  
 fi
 
 echo "Adding the Image in outdir"
@@ -100,7 +100,7 @@ fi
 echo "Make and install busybox"
 make -j6 ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE}
 echo "Complete busybox make"
-sudo make -j6 CONFIG_PREFIX=${OUTDIR}/rootfs ARCH=arm64 CROSS_COMPILE=${CROSS_COMPILE} install
+make -j6 CONFIG_PREFIX=${OUTDIR}/rootfs ARCH=arm64 CROSS_COMPILE=${CROSS_COMPILE} install
 echo "Complete busybox install"
 cd ${OUTDIR}/rootfs
 echo
