@@ -132,6 +132,8 @@ sudo mknod -m 666 dev/console c 5 1
 # TODO: Clean and build the writer utility
 echo "Clean and build the writer utility"
 cd ${FINDER_APP_DIR}
+make clean
+make CROSS_COMPILE=${CROSS_COMPILE} writer
 sudo cp Makefile ${OUTDIR}/rootfs/home
 sudo cp writer.c ${OUTDIR}/rootfs/home
 sudo make clean
@@ -156,6 +158,9 @@ cd ${OUTDIR}/rootfs
 sudo find . | /usr/bin/cpio -H newc -ov --owner root:root > ${OUTDIR}/initramfs.cpio
 cd ${OUTDIR}
 gzip -f initramfs.cpio
+echo "Show outdir "${OUTDIR}
 ls -ltrs
+echo "Show "${OUTDIR}"/rootfs/home"
+ls -ltrs ${OUTDIR}/rootfs/home
 echo
 echo "Complete running manual-linux.sh"
