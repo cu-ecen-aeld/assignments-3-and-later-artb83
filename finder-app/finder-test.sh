@@ -50,6 +50,10 @@ fi
 #echo "Removing the old writer utility and compiling as a native application"
 #make clean
 #make
+echo "Current path "$(pwd)
+echo "Show "$(realpath writer)" build details" 
+/usr/bin/strings writer | egrep -e "arm|arch"
+
 echo "finder-test.sh path: "$(pwd)
 ls -ltrs
 echo "Writing ${NUMFILES} files containing string ${WRITESTR} to ${WRITEDIR}"

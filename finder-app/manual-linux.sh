@@ -148,9 +148,6 @@ sudo cp ${FINDER_APP_DIR}/conf/username.txt ${OUTDIR}/rootfs/home/conf
 sudo cp ${FINDER_APP_DIR}/autorun-qemu.sh ${OUTDIR}/rootfs/home
 sudo cp ${FINDER_APP_DIR}/writer ${OUTDIR}/rootfs/home
 
-echo "Show "${FINDER_APP_DIR}"/writer build details" 
-file writer
-
 # TODO: Chown the root directory
 sudo chown --recursive root:root ${OUTDIR}/rootfs
 
