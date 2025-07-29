@@ -134,8 +134,8 @@ echo "Clean and build the writer utility"
 cd ${FINDER_APP_DIR}
 make clean
 make CROSS_COMPILE=${CROSS_COMPILE} writer
-sudo cp Makefile ${OUTDIR}/rootfs/home
-sudo cp writer.c ${OUTDIR}/rootfs/home
+#sudo cp Makefile ${OUTDIR}/rootfs/home
+#sudo cp writer.c ${OUTDIR}/rootfs/home
 sudo make clean
 sudo make CROSS_COMPILE=${CROSS_COMPILE} writer
 echo "Show "${FINDER_APP_DIR}
@@ -150,6 +150,8 @@ sudo cp ${FINDER_APP_DIR}/finder-test.sh ${OUTDIR}/rootfs/home
 sudo cp ${FINDER_APP_DIR}/conf/assignment.txt ${OUTDIR}/rootfs/home/conf
 sudo cp ${FINDER_APP_DIR}/conf/username.txt ${OUTDIR}/rootfs/home/conf
 sudo cp ${FINDER_APP_DIR}/autorun-qemu.sh ${OUTDIR}/rootfs/home
+sudo cp ${FINDER_APP_DIR}/writer ${OUTDIR}/rootfs/home
+
 
 # TODO: Chown the root directory
 sudo chown --recursive root:root ${OUTDIR}/rootfs
