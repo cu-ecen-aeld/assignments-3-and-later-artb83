@@ -50,10 +50,15 @@ fi
 #echo "Removing the old writer utility and compiling as a native application"
 #make clean
 #make
+echo "finder-test.sh path: "$(pwd)
+ls -ltrs
 echo "Writing ${NUMFILES} files containing string ${WRITESTR} to ${WRITEDIR}"
-
+echo
 for i in $( seq 1 $NUMFILES)
 do
+	ls -ltrs
+	pwd
+	echo "$WRITEDIR/${username}$i.txt"
 	./writer "$WRITEDIR/${username}$i.txt" "$WRITESTR"
 done
 
