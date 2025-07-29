@@ -113,10 +113,16 @@ ${CROSS_COMPILE}readelf -a bin/busybox | grep "Shared library"
 
 # TODO: Add library dependencies to rootfs
 echo "Adding library dependencies to rootfs"
-cp /usr/local/arm-cross-compiler/arm-gnu-toolchain-13.3.rel1-x86_64-aarch64-none-linux-gnu/aarch64-none-linux-gnu/libc/lib/ld-linux-aarch64.so.1 ${OUTDIR}/rootfs/lib
-cp /usr/local/arm-cross-compiler/arm-gnu-toolchain-13.3.rel1-x86_64-aarch64-none-linux-gnu/aarch64-none-linux-gnu/libc/lib64/libm.so.6           ${OUTDIR}/rootfs/lib64
-cp /usr/local/arm-cross-compiler/arm-gnu-toolchain-13.3.rel1-x86_64-aarch64-none-linux-gnu/aarch64-none-linux-gnu/libc/lib64/libresolv.so.2      ${OUTDIR}/rootfs/lib64
-cp /usr/local/arm-cross-compiler/arm-gnu-toolchain-13.3.rel1-x86_64-aarch64-none-linux-gnu/aarch64-none-linux-gnu/libc/lib64/libc.so.6           ${OUTDIR}/rootfs/lib64
+BB_DEPS=${FINDER_APP_DIR}/busybox_deps
+cp ${BB_DEPS}/ld-linux-aarch64.so.1 ${OUTDIR}/rootfs/lib
+cp ${BB_DEPS}/libm.so.6             ${OUTDIR}/rootfs/lib64
+cp ${BB_DEPS}/libresolv.so.2        ${OUTDIR}/rootfs/lib64
+cp ${BB_DEPS}/libc.so.6             ${OUTDIR}/rootfs/lib64
+
+#cp /usr/local/arm-cross-compiler/arm-gnu-toolchain-13.3.rel1-x86_64-aarch64-none-linux-gnu/aarch64-none-linux-gnu/libc/lib/ld-linux-aarch64.so.1 ${OUTDIR}/rootfs/lib
+#cp /usr/local/arm-cross-compiler/arm-gnu-toolchain-13.3.rel1-x86_64-aarch64-none-linux-gnu/aarch64-none-linux-gnu/libc/lib64/libm.so.6           ${OUTDIR}/rootfs/lib64
+#cp /usr/local/arm-cross-compiler/arm-gnu-toolchain-13.3.rel1-x86_64-aarch64-none-linux-gnu/aarch64-none-linux-gnu/libc/lib64/libresolv.so.2      ${OUTDIR}/rootfs/lib64
+#cp /usr/local/arm-cross-compiler/arm-gnu-toolchain-13.3.rel1-x86_64-aarch64-none-linux-gnu/aarch64-none-linux-gnu/libc/lib64/libc.so.6           ${OUTDIR}/rootfs/lib64
 
 
 # TODO: Make device nodes
