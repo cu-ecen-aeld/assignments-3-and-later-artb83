@@ -60,9 +60,6 @@ echo "Writing ${NUMFILES} files containing string ${WRITESTR} to ${WRITEDIR}"
 echo
 for i in $( seq 1 $NUMFILES)
 do
-	ls -ltrs
-	pwd
-	echo "$WRITEDIR/${username}$i.txt"
 	./writer "$WRITEDIR/${username}$i.txt" "$WRITESTR"
 done
 

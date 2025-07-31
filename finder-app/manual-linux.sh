@@ -116,12 +116,6 @@ sudo cp ${BB_DEPS}/libm.so.6             ${OUTDIR}/rootfs/lib64
 sudo cp ${BB_DEPS}/libresolv.so.2        ${OUTDIR}/rootfs/lib64
 sudo cp ${BB_DEPS}/libc.so.6             ${OUTDIR}/rootfs/lib64
 
-#cp /usr/local/arm-cross-compiler/arm-gnu-toolchain-13.3.rel1-x86_64-aarch64-none-linux-gnu/aarch64-none-linux-gnu/libc/lib/ld-linux-aarch64.so.1 ${OUTDIR}/rootfs/lib
-#cp /usr/local/arm-cross-compiler/arm-gnu-toolchain-13.3.rel1-x86_64-aarch64-none-linux-gnu/aarch64-none-linux-gnu/libc/lib64/libm.so.6           ${OUTDIR}/rootfs/lib64
-#cp /usr/local/arm-cross-compiler/arm-gnu-toolchain-13.3.rel1-x86_64-aarch64-none-linux-gnu/aarch64-none-linux-gnu/libc/lib64/libresolv.so.2      ${OUTDIR}/rootfs/lib64
-#cp /usr/local/arm-cross-compiler/arm-gnu-toolchain-13.3.rel1-x86_64-aarch64-none-linux-gnu/aarch64-none-linux-gnu/libc/lib64/libc.so.6           ${OUTDIR}/rootfs/lib64
-
-
 # TODO: Make device nodes
 echo "Making device nodes"
 cd ${OUTDIR}/rootfs
@@ -134,13 +128,10 @@ echo "Clean and build the writer utility"
 cd ${FINDER_APP_DIR}
 make clean
 make CROSS_COMPILER=${CROSS_COMPILE} writer
-echo "Show "${FINDER_APP_DIR}
 ls -ltrs
-echo
+
 # TODO: Copy the finder related scripts and executables to the /home directory
 # on the target rootfs
-echo "Copy the finder related scripts and executables to the /home directory on the target rootfs"
-
 sudo cp ${FINDER_APP_DIR}/finder.sh ${OUTDIR}/rootfs/home
 sudo cp ${FINDER_APP_DIR}/finder-test.sh ${OUTDIR}/rootfs/home
 sudo cp ${FINDER_APP_DIR}/conf/assignment.txt ${OUTDIR}/rootfs/home/conf
