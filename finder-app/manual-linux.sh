@@ -133,7 +133,7 @@ sudo mknod -m 666 dev/console c 5 1
 echo "Clean and build the writer utility"
 cd ${FINDER_APP_DIR}
 make clean
-make CROSS_COMPILE=${CROSS_COMPILE} writer
+make CROSS_COMPILER=${CROSS_COMPILE} writer
 echo "Show "${FINDER_APP_DIR}
 ls -ltrs
 echo
