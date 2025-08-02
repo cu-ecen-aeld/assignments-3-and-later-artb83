@@ -12,7 +12,7 @@ fi
 #If provided path is valid, search for the pattern, otherwise exit with error
 if [ -d $1 ]; then
     N_MATCHING_FILES="$(grep -Rl $2 $1 | wc -l)"
-    N_MATCHING_LINES="$(grep -rc $2 $1 | awk -F'\0' '{s+=$NF}END{print s}')"
+    N_MATCHING_LINES="$(grep -rc $2 $1 | wc -w)"
 else
     echo $1" is not a directory or a filename."
     exit 1
