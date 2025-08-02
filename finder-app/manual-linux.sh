@@ -69,10 +69,8 @@ fi
 # TODO: Create necessary base directories
 sudo mkdir -p rootfs
 if [ ! -d ./rootfs ]; then
-	echo "Could not create a "$OUTDIR" directory"
+	echo "Could not create a "${OUTDIR}"/rootfs directory"
 	exit 1
-else
-	cd rootfs
 fi
 
 cd rootfs
