@@ -17,7 +17,6 @@ struct thread_data{
 	int m_wait_to_obtain_ms;
 	int m_wait_to_release_ms;
 	pthread_mutex_t* m_mutex;
-	pthread_t m_tid;
     /**
      * Set to true if the thread completed with success, false
      * if an error occurred.
