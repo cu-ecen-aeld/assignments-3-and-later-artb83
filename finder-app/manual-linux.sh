@@ -78,8 +78,8 @@ echo
 echo "Creating necessary base directories"
 echo
 
-sudo mkdir -p ./bin ./dev ./etc ./lib ./lib64 ./proc ./sys ./sbin ./tmp 
-sudo mkdir -p ./home/conf ./usr/bin ./usr/sbin ./usr/lib	
+sudo mkdir -p ./bin ./dev ./lib ./lib64 ./proc ./sys ./sbin ./tmp 
+sudo mkdir -p ./home/conf ./usr/bin ./usr/sbin ./usr/lib ./etc/finder-app/conf
 sudo mkdir -p ./var/log
 
 cd "$OUTDIR"
@@ -134,12 +134,17 @@ ls -ltrs
 # on the target rootfs
 echo "Copy the finder related scripts and executables to the /home directory on the target rootfs"
 
-sudo cp ${FINDER_APP_DIR}/finder.sh ${OUTDIR}/rootfs/home
-sudo cp ${FINDER_APP_DIR}/finder-test.sh ${OUTDIR}/rootfs/home
-sudo cp ${FINDER_APP_DIR}/conf/assignment.txt ${OUTDIR}/rootfs/home/conf
-sudo cp ${FINDER_APP_DIR}/conf/username.txt ${OUTDIR}/rootfs/home/conf
+#sudo cp ${FINDER_APP_DIR}/finder.sh ${OUTDIR}/rootfs/home
+#sudo cp ${FINDER_APP_DIR}/finder-test.sh ${OUTDIR}/rootfs/home
+sudo cp ${FINDER_APP_DIR}/finder.sh ${OUTDIR}/rootfs/usr/bin
+sudo cp ${FINDER_APP_DIR}/finder-test.sh ${OUTDIR}/rootfs/usr/bin
+#sudo cp ${FINDER_APP_DIR}/conf/assignment.txt ${OUTDIR}/rootfs/home/conf
+#sudo cp ${FINDER_APP_DIR}/conf/username.txt ${OUTDIR}/rootfs/home/conf
+sudo cp ${FINDER_APP_DIR}/conf/assignment.txt ${OUTDIR}/rootfs/etc/finder-app/conf
+sudo cp ${FINDER_APP_DIR}/conf/username.txt ${OUTDIR}/rootfs/etc/finder-app/conf
 sudo cp ${FINDER_APP_DIR}/autorun-qemu.sh ${OUTDIR}/rootfs/home
-sudo cp ${FINDER_APP_DIR}/writer ${OUTDIR}/rootfs/home
+#sudo cp ${FINDER_APP_DIR}/writer ${OUTDIR}/rootfs/home
+sudo cp ${FINDER_APP_DIR}/writer ${OUTDIR}/rootfs/usr/bin
 
 # TODO: Chown the root directory
 sudo chown --recursive root:root ${OUTDIR}/rootfs
