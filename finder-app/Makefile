@@ -2,8 +2,8 @@
 
 TARGET = writer
 SRCS = writer.c
-CC = gcc
-CFLAGS = -g -Wall
+#CC = gcc
+#CFLAGS = -g -Wall
 LIBS = -lc
 
 
@@ -12,7 +12,7 @@ OBJS = $(SRCS:.c=.o)
 all: $(TARGET)
 
 $(TARGET): $(OBJS)
-	$(CROSS_COMPILER)$(CC) $(CFLAGS) -o $(TARGET) $(OBJS) $(LIBS)
+	$(CROSS_COMPILER)$(CC) $(CFLAGS) -o $(TARGET) $(OBJS) $(LDFLAGS)
 
 %.o: %.c
 	$(CROSS_COMPILER)$(CC) -o $(TARGET) $(CFLAGS) -c $< -o $@
