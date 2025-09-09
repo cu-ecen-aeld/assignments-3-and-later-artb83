@@ -9,6 +9,8 @@ LIBS = -lc
 
 OBJS = $(SRCS:.c=.o)
 
+all: $(TARGET)
+
 $(TARGET): $(OBJS)
 	$(CROSS_COMPILER)$(CC) $(CFLAGS) -o $(TARGET) $(OBJS) $(LIBS)
 
