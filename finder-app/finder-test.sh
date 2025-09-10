@@ -30,7 +30,7 @@ MATCHSTR="The number of files are ${NUMFILES} and the number of matching lines a
 rm -rf "${WRITEDIR}"
 
 # create $WRITEDIR if not assignment1
-assignment=`cat conf/assignment.txt`
+assignment=`cat /etc/finder-app/conf/assignment.txt`
 
 if [ $assignment != 'assignment1' ]
 then
@@ -50,12 +50,9 @@ fi
 #echo "Removing the old writer utility and compiling as a native application"
 #make clean
 #make
-echo "Current path "$(pwd)
-echo "Show "$(realpath writer)" build details" 
-/usr/bin/strings writer | egrep -e "arm|arch"
-
-echo "finder-test.sh path: "$(pwd)
-ls -ltrs
+echo 'writer app build details '$(/usr/bin/strings /usr/bin/writer | egrep -e "arm|arch")
+echo "finder-test.sh path: $0"
+echo
 echo "Writing ${NUMFILES} files containing string ${WRITESTR} to ${WRITEDIR}"
 echo
 for i in $( seq 1 $NUMFILES)
