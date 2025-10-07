@@ -8,7 +8,10 @@
 #include <stdbool.h>
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <sys/wait.h>
 #include <netdb.h>
+#include <arpa/inet.h> // for inet_ntop
+#include <fcntl.h>
 #include "aesdsocket.h"
 
 static bool caught_sigint=false;
@@ -21,6 +24,7 @@ void closeAll(int sfd, int cfd, int fd) {
 	close(sfd);
 	close(cfd);
 	close(fd);
+	remove("/var/tmp/aesdsocketdata");
 	if(data!=NULL)free(data);
 }
 
@@ -34,12 +38,33 @@ void writeMsgToSyslog(int log_facility, int log_priority, const char* msgToLog) 
 	closelog();
 }
 
+int appendtofile(int* fd, char* data) {
+	char* newline=strstr(data, "\n");
+	if( newline!=NULL && 0<(*fd = open("/var/tmp/aesdsocketdata", O_CREAT|O_APPEND|O_WRONLY, S_IRUSR|S_IWUSR|S_IRGRP|S_IWGRP)) ){
+		data[newline-data+1]='\0';
+		int res=write(*fd, data, (newline-data+1)*sizeof(char));
+		close(*fd);
+		return res<0 ? res : 0;
+	}
+	return -1;
+}
+ssize_t appendFromFileToBuffAndSend(int cfd, int* fd, char* buff) {
+	int nRead = 0;
+	ssize_t res=-1;
+	if( 0<(*fd = open("/var/tmp/aesdsocketdata", O_RDONLY, S_IRUSR|S_IRGRP)) ){
+		res=0;
+		while( 0<(nRead = read(*fd, buff, BUFFER_SIZE)) ) {
+			if( 0<(res=send(cfd, buff, nRead, 0)) ) break; //MSG_FASTOPEN
+		}
+	}
+	close(*fd);
+	return res;
+}
+
 int main(int argc, char** argv){
 	printf("HELLO  Argc=%d Argv=%s!\n", argc, argv[1]);
-	struct sigaction new_action;
 	bool bDaemon=(argc>1 ? (strcmp(argv[1], "-d")==0 || strcmp(argv[1], "d")==0) : false);
 	bool bRun=true;
-
 	struct addrinfo hints;
 	struct addrinfo* servinfo=NULL;
 	int srvfd = 0; //server
@@ -61,20 +86,32 @@ int main(int argc, char** argv){
 	}
 
 	int yes=1;
+	int rv=0;
 	setsockopt(srvfd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int));
-	if(bind(srvfd, servinfo->ai_addr, servinfo->ai_addrlen)<0) {
+	rv=bind(srvfd, servinfo->ai_addr, servinfo->ai_addrlen);
+	if(servinfo!=NULL)freeaddrinfo(servinfo);
+	if( rv<0 ) {
 		printf("Error %d (%s) when binding a socket\n", errno, strerror(errno));
 		exit(1);
 	}
-	if(servinfo!=NULL)freeaddrinfo(servinfo);
 
+	pid_t cpid=0;
+	char* argvs[] = {"&"};
+	if(bDaemon) {
+		printf("is daemon\n");
+		if (0==(cpid=fork()) ) { //child
+			rv = execv("./aesdsocket", argvs);
+		}
+	}
 	// allocate data buffer
-	if( NULL==( data=(char*)malloc(10*1024*1024*sizeof(char)) ) ) bRun=false;
+	if( NULL==( data=(char*)malloc((1+BUFFER_SIZE)*sizeof(char)) ) ) bRun=false;
 
 	if(!bRun) { //if any errors, close all and exit
 		closeAll(srvfd, cfd, fd);
 		exit(1);
 	} else {    //else subscribe to signals, listen for incoming connections and signals, continue running.
+		struct sigaction new_action;
+
 		memset(&new_action, 0, sizeof(struct sigaction));
 		new_action.sa_handler = signalHandler;
 		if( sigaction(SIGINT, &new_action, NULL) !=0 ) {
@@ -90,7 +127,8 @@ int main(int argc, char** argv){
 	}
 	//listen, accept, connect and respond
 	socklen_t cAddrLen=0;
-	struct sockaddr cInfo;
+	struct sockaddr_in cInfo;
+	char ip4add[INET_ADDRSTRLEN]; //ipv4
 	//listen
 	listen(srvfd, LISTEN_BACKLOG);
 	while(bRun) {
@@ -103,30 +141,35 @@ int main(int argc, char** argv){
 			exit(0);
 		}
 		cAddrLen=sizeof(cInfo);
-		cfd = accept(srvfd, &cInfo, &cAddrLen);
-			openlog(NULL, 0, LOG_USER);
-			syslog(LOG_INFO, "Accepted connection from %s", cInfo.sa_data);
-			closelog();
+		cfd = accept(srvfd, (struct sockaddr*)&cInfo, &cAddrLen);
 		if(cfd>0){
-			setsockopt(cfd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int));
-			// if(-1 == connect(cfd, &cInfo, cAddrLen)) {
-			// 	printf("Error %d (%s) when connecting a client socket\n", errno, strerror(errno));
-			// }
-			ssize_t recieved = recv(cfd, data, 1024*1024*sizeof(char), MSG_WAITALL);//MSG_WAITALL
+			inet_ntop(AF_INET, &cInfo.sin_addr, ip4add, INET_ADDRSTRLEN);
+			openlog(NULL, 0, LOG_USER);
+			syslog(LOG_INFO, "Accepted connection from %s", ip4add);
+			closelog();
+			ssize_t recieved = recv(cfd, data, BUFFER_SIZE*sizeof(char), 0);//MSG_WAITALL
+			shutdown(cfd, SHUT_RD);
+			if (recieved>BUFFER_SIZE) {
+				shutdown(cfd, SHUT_RDWR);
+				continue;
+			}
 			printf("\nServer got %ld bytes of data: (%s)\n", recieved, data);
-
-			ssize_t sent = send(cfd, data, recieved, 0);//MSG_FASTOPEN
+			appendtofile(&fd, data);
+			ssize_t sent = appendFromFileToBuffAndSend(cfd, &fd, data);
 			if(sent==-1) printf("Error %d (%s) when sending data to a client\n", errno, strerror(errno));
 			printf("Server sent %ld bytes of data: (%s)\n", sent, data);
-			if(bDaemon)printf("is daemon\n");
+			data[0]='\0';
 			shutdown(cfd, SHUT_RDWR);
-			close(cfd);
 			cfd=-1;
+			printf("Closed connection from %s\n", ip4add);
 			openlog(NULL, 0, LOG_USER);
-			syslog(LOG_INFO, "Closed connection from %s", cInfo.sa_data);
+			syslog(LOG_INFO, "Closed connection from %s", ip4add);
 			closelog();
 		}
 	}
+	if (cpid>0) { //parent
+		rv = wait(NULL);
+	}
 	closeAll(srvfd, cfd, fd);
-	return 0;
+	return rv;
 }
