@@ -8,11 +8,14 @@
 #include <stdbool.h>
 #include <sys/types.h>
 #include <sys/socket.h>
-#include <sys/wait.h>
+#include <sys/stat.h>
 #include <netdb.h>
 #include <arpa/inet.h> // for inet_ntop
 #include <fcntl.h>
+#include <linux/limits.h>
 #include "aesdsocket.h"
+
+#include <linux/limits.h>
 
 static bool caught_sigint=false;
 static bool caught_sigterm=false;
@@ -61,6 +64,45 @@ ssize_t appendFromFileToBuffAndSend(int cfd, int* fd, char* buff) {
 	return res;
 }
 
+int daemonize(void){
+	pid_t pid = fork();
+	if(pid<0) {
+		return -1;
+	}else if (pid>0) exit(EXIT_SUCCESS);//exit parent proc
+
+	if (setsid() ==-1) return -1; //create new session and proc group
+
+	sigsubscribe(signalHandler);
+
+	pid = fork();
+	if (pid<0) exit(EXIT_FAILURE);
+	if (pid>0) exit(EXIT_SUCCESS);
+	umask(0);
+	chdir("/");
+	for (int i=0; i<NR_OPEN; i++) close(i); //closing all file descriptors, including stdin/out/err
+	//reopen stdin/out/err and redirect them to /dev/null
+	open("/dev/null", O_RDWR);
+	dup(0);
+	dup(0);
+	return 0;
+}
+
+int sigsubscribe(void* handler) {
+	struct sigaction new_action;
+
+	memset(&new_action, 0, sizeof(struct sigaction));
+	new_action.sa_handler = handler;
+	if( sigaction(SIGINT, &new_action, NULL) !=0 ) {
+		printf("Error %d (%s) registering for SIGINT", errno, strerror(errno));
+		return -1;
+	}
+	if( sigaction(SIGTERM, &new_action, NULL) !=0 ) {
+		printf("Error %d (%s) registering for SIGTERM", errno, strerror(errno));
+		return  -1;
+	}
+	return 0;
+}
+
 int main(int argc, char** argv){
 	printf("HELLO  Argc=%d Argv=%s!\n", argc, argv[1]);
 	bool bDaemon=(argc>1 ? (strcmp(argv[1], "-d")==0 || strcmp(argv[1], "d")==0) : false);
@@ -95,14 +137,6 @@ int main(int argc, char** argv){
 		exit(1);
 	}
 
-	pid_t cpid=0;
-	char* argvs[] = {"&"};
-	if(bDaemon) {
-		printf("is daemon\n");
-		if (0==(cpid=fork()) ) { //child
-			rv = execv("./aesdsocket", argvs);
-		}
-	}
 	// allocate data buffer
 	if( NULL==( data=(char*)malloc((1+BUFFER_SIZE)*sizeof(char)) ) ) bRun=false;
 
@@ -110,19 +144,11 @@ int main(int argc, char** argv){
 		closeAll(srvfd, cfd, fd);
 		exit(1);
 	} else {    //else subscribe to signals, listen for incoming connections and signals, continue running.
-		struct sigaction new_action;
-
-		memset(&new_action, 0, sizeof(struct sigaction));
-		new_action.sa_handler = signalHandler;
-		if( sigaction(SIGINT, &new_action, NULL) !=0 ) {
-			printf("Error %d (%s) registering for SIGINT", errno, strerror(errno));
-			bRun=false;
-			exit(1);
-		}
-		if( sigaction(SIGTERM, &new_action, NULL) !=0 ) {
-			printf("Error %d (%s) registering for SIGTERM", errno, strerror(errno));
-			bRun=false;
-			exit(1);
+		if(bDaemon) {
+			//bRun = (daemonize() == 0 ? true : false);
+			daemonize();
+		}else {
+			bRun = (0==sigsubscribe(signalHandler) ? true : false);
 		}
 	}
 	//listen, accept, connect and respond
@@ -130,7 +156,7 @@ int main(int argc, char** argv){
 	struct sockaddr_in cInfo;
 	char ip4add[INET_ADDRSTRLEN]; //ipv4
 	//listen
-	listen(srvfd, LISTEN_BACKLOG);
+	if(bRun) listen(srvfd, LISTEN_BACKLOG);
 	while(bRun) {
 		printf("\nWaiting for signal\n");
 		if(caught_sigint || caught_sigterm) {
@@ -166,9 +192,6 @@ int main(int argc, char** argv){
 			syslog(LOG_INFO, "Closed connection from %s", ip4add);
 			closelog();
 		}
-	}
-	if (cpid>0) { //parent
-		rv = wait(NULL);
 	}
 	closeAll(srvfd, cfd, fd);
 	return rv;
