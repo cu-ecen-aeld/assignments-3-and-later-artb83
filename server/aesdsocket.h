@@ -13,6 +13,6 @@ static void signalHandler(int numOfSignal);
 void writeMsgToSyslog(int log_facility, int log_priority, const char* msgToLog);
 int appendtofile(int* fd, char* data);
 ssize_t appendFromFileToBuffAndSend(int cfd, int* fd, char* buff);
-int daemonize();
+int daemonize(int srvfd);
 int sigsubscribe(void* handler);
 #endif //SERVER_AESDSOCKET_H

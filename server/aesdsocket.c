@@ -12,7 +12,7 @@
 #include <netdb.h>
 #include <arpa/inet.h> // for inet_ntop
 #include <fcntl.h>
-#include <linux/limits.h>
+#include <linux/fs.h>
 #include "aesdsocket.h"
 
 #include <linux/limits.h>
@@ -64,22 +64,25 @@ ssize_t appendFromFileToBuffAndSend(int cfd, int* fd, char* buff) {
 	return res;
 }
 
-int daemonize(void){
+int daemonize(int srvfd){
 	pid_t pid = fork();
 	if(pid<0) {
-		return -1;
-	}else if (pid>0) exit(EXIT_SUCCESS);//exit parent proc
+		exit(EXIT_FAILURE);
+	}else if (pid>0) {
+		exit(EXIT_SUCCESS);//exit parent proc
+	}
 
 	if (setsid() ==-1) return -1; //create new session and proc group
-
-	sigsubscribe(signalHandler);
 
 	pid = fork();
 	if (pid<0) exit(EXIT_FAILURE);
 	if (pid>0) exit(EXIT_SUCCESS);
 	umask(0);
 	chdir("/");
-	for (int i=0; i<NR_OPEN; i++) close(i); //closing all file descriptors, including stdin/out/err
+	for (int i=0; i<INR_OPEN_MAX; i++) {
+		if (i==srvfd) continue; //inherit server socket descriptor
+		close(i); //closing file descriptors, including stdin/out/err
+	}
 	//reopen stdin/out/err and redirect them to /dev/null
 	open("/dev/null", O_RDWR);
 	dup(0);
@@ -118,13 +121,13 @@ int main(int argc, char** argv){
 	hints.ai_flags = AI_PASSIVE;
 	if(0!=getaddrinfo(NULL, "9000", &hints, &servinfo)) {
 		printf("Error %d (%s) when getting addrinfo\n", errno, strerror(errno));
-		exit(1);
+		exit(EXIT_FAILURE);
 	}
 
 	srvfd=socket(servinfo->ai_family, servinfo->ai_socktype, servinfo->ai_protocol);
 	if(srvfd<0) {
 		printf("Error %d (%s) when creating a socket\n", errno, strerror(errno));
-		exit(1);
+		exit(EXIT_FAILURE);
 	}
 
 	int yes=1;
@@ -134,7 +137,7 @@ int main(int argc, char** argv){
 	if(servinfo!=NULL)freeaddrinfo(servinfo);
 	if( rv<0 ) {
 		printf("Error %d (%s) when binding a socket\n", errno, strerror(errno));
-		exit(1);
+		exit(EXIT_FAILURE);
 	}
 
 	// allocate data buffer
@@ -142,14 +145,11 @@ int main(int argc, char** argv){
 
 	if(!bRun) { //if any errors, close all and exit
 		closeAll(srvfd, cfd, fd);
-		exit(1);
+		exit(EXIT_FAILURE);
 	} else {    //else subscribe to signals, listen for incoming connections and signals, continue running.
-		if(bDaemon) {
-			//bRun = (daemonize() == 0 ? true : false);
-			daemonize();
-		}else {
-			bRun = (0==sigsubscribe(signalHandler) ? true : false);
-		}
+		if(bDaemon) bRun = (daemonize(srvfd) == 0 ? true : false);
+		bRun = (0==sigsubscribe(signalHandler) ? true : false);
+
 	}
 	//listen, accept, connect and respond
 	socklen_t cAddrLen=0;
@@ -164,7 +164,7 @@ int main(int argc, char** argv){
 			closeAll(srvfd, cfd, fd);
 			bRun=false;
 			printf("\nCaught signal, exiting\n");
-			exit(0);
+			exit(EXIT_SUCCESS);
 		}
 		cAddrLen=sizeof(cInfo);
 		cfd = accept(srvfd, (struct sockaddr*)&cInfo, &cAddrLen);
