@@ -44,22 +44,25 @@ void writeMsgToSyslog(int log_facility, int log_priority, const char* msgToLog) 
 int appendtofile(int* fd, char* data) {
 	char* newline=strstr(data, "\n");
 	if( newline!=NULL && 0<(*fd = open("/var/tmp/aesdsocketdata", O_CREAT|O_APPEND|O_WRONLY, S_IRUSR|S_IWUSR|S_IRGRP|S_IWGRP)) ){
-		data[newline-data+1]='\0';
+		data[newline-data+1]='\0';//terminate string after \n character
 		int res=write(*fd, data, (newline-data+1)*sizeof(char));
 		close(*fd);
-		return res<0 ? res : 0;
+		return res;
 	}
 	return -1;
 }
-ssize_t appendFromFileToBuffAndSend(int cfd, int* fd, char* buff) {
+ssize_t appendFromFileToBuffAndSend(int* cfd, int* fd, char* buff) {
 	int nRead = 0;
 	ssize_t res=-1;
 	if( 0<(*fd = open("/var/tmp/aesdsocketdata", O_RDONLY, S_IRUSR|S_IRGRP)) ){
 		res=0;
 		while( 0<(nRead = read(*fd, buff, BUFFER_SIZE)) ) {
-			if( 0<(res=send(cfd, buff, nRead, 0)) ) break; //MSG_FASTOPEN
+			if( 0<(res=send(*cfd, buff, nRead, 0)) ) break; //MSG_FASTOPEN
 		}
 	}
+	shutdown(*cfd, SHUT_RDWR);
+	close(*cfd);
+	*cfd=-1;
 	close(*fd);
 	return res;
 }
@@ -107,7 +110,6 @@ int sigsubscribe(void* handler) {
 }
 
 int main(int argc, char** argv){
-	printf("HELLO  Argc=%d Argv=%s!\n", argc, argv[1]);
 	bool bDaemon=(argc>1 ? (strcmp(argv[1], "-d")==0 || strcmp(argv[1], "d")==0) : false);
 	bool bRun=true;
 	struct addrinfo hints;
@@ -158,7 +160,6 @@ int main(int argc, char** argv){
 	//listen
 	if(bRun) listen(srvfd, LISTEN_BACKLOG);
 	while(bRun) {
-		printf("\nWaiting for signal\n");
 		if(caught_sigint || caught_sigterm) {
 			writeMsgToSyslog(LOG_USER, LOG_INFO, "Caught signal, exiting");
 			closeAll(srvfd, cfd, fd);
@@ -177,17 +178,13 @@ int main(int argc, char** argv){
 			shutdown(cfd, SHUT_RD);
 			if (recieved>BUFFER_SIZE) {
 				shutdown(cfd, SHUT_RDWR);
+				close(cfd);
 				continue;
 			}
-			printf("\nServer got %ld bytes of data: (%s)\n", recieved, data);
 			appendtofile(&fd, data);
-			ssize_t sent = appendFromFileToBuffAndSend(cfd, &fd, data);
+			ssize_t sent = appendFromFileToBuffAndSend(&cfd, &fd, data);
 			if(sent==-1) printf("Error %d (%s) when sending data to a client\n", errno, strerror(errno));
-			printf("Server sent %ld bytes of data: (%s)\n", sent, data);
 			data[0]='\0';
-			shutdown(cfd, SHUT_RDWR);
-			cfd=-1;
-			printf("Closed connection from %s\n", ip4add);
 			openlog(NULL, 0, LOG_USER);
 			syslog(LOG_INFO, "Closed connection from %s", ip4add);
 			closelog();
