@@ -5,8 +5,6 @@
 #include <unistd.h>
 #include <signal.h>
 #include <string.h>
-#include <stdbool.h>
-#include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <netdb.h>
@@ -19,7 +17,7 @@
 
 static bool caught_sigint=false;
 static bool caught_sigterm=false;
-static char* data=NULL;
+static SLIST_HEAD(head_sl, threads_list_node_t) head;
 
 void closeAll(int sfd, int cfd, int fd) {
 	closelog();
@@ -28,9 +26,21 @@ void closeAll(int sfd, int cfd, int fd) {
 	close(cfd);
 	close(fd);
 	remove("/var/tmp/aesdsocketdata");
-	if(data!=NULL)free(data);
+	if(head.slh_first!=NULL)releaseThreadResourcesFromList();
 }
-
+void releaseThreadResourcesFromList(void) {
+	struct threads_list_node_t* nodep=NULL;
+	SLIST_FOREACH_SAFE(nodep, &head, nodes, nodep->nodes.sle_next) {
+		pthread_join(nodep->thrData->threadId, NULL);
+		pthread_mutex_unlock(nodep->thrData->mutex);
+		pthread_mutex_destroy(nodep->thrData->mutex);
+		close(nodep->thrData->clientFd);
+		close(nodep->thrData->logFd);
+		free(nodep->thrData->dataBuff);
+		free(nodep->thrData);
+		SLIST_REMOVE(&head, nodep, threads_list_node_t, nodes );
+	}
+}
 static void signalHandler(int numOfSignal){
 	if( numOfSignal == SIGINT ) caught_sigint = true;
 	if( numOfSignal == SIGTERM ) caught_sigterm = true;
@@ -41,11 +51,11 @@ void writeMsgToSyslog(int log_facility, int log_priority, const char* msgToLog) 
 	closelog();
 }
 
-int appendtofile(int* fd, char* data) {
+ssize_t appendtofile(int* fd, char* data) {
 	char* newline=strstr(data, "\n");
 	if( newline!=NULL && 0<(*fd = open("/var/tmp/aesdsocketdata", O_CREAT|O_APPEND|O_WRONLY, S_IRUSR|S_IWUSR|S_IRGRP|S_IWGRP)) ){
 		data[newline-data+1]='\0';//terminate string after \n character
-		int res=write(*fd, data, (newline-data+1)*sizeof(char));
+		ssize_t res=write(*fd, data, (newline-data+1)*sizeof(char));
 		close(*fd);
 		return res;
 	}
@@ -67,6 +77,53 @@ ssize_t appendFromFileToBuffAndSend(int* cfd, int* fd, char* buff) {
 	return res;
 }
 
+void* rcvAndSndThread(void* thrArg) {
+	thread_data_t* thrData = (thread_data_t*)thrArg;
+	pthread_mutex_lock(thrData->mutex);
+	openlog(NULL, 0, LOG_USER);
+	syslog(LOG_INFO, "Accepted connection from %s", thrData->ip4add);
+	closelog();
+	ssize_t recieved = recv(thrData->clientFd, thrData->dataBuff, BUFFER_SIZE*sizeof(char), 0);//MSG_WAITALL
+	shutdown(thrData->clientFd, SHUT_RD);
+	if (recieved>BUFFER_SIZE) {
+		shutdown(thrData->clientFd, SHUT_RDWR);
+		close(thrData->clientFd);
+		thrData->threadComplete = true;
+		pthread_mutex_unlock(thrData->mutex);
+		return thrData;
+	}
+	appendtofile(&thrData->logFd, thrData->dataBuff);
+	ssize_t sent=appendFromFileToBuffAndSend(&thrData->clientFd, &thrData->logFd, thrData->dataBuff);
+	if(sent==-1) printf("Error %d (%s) when sending data to a client\n", errno, strerror(errno));
+	thrData->dataBuff[0]='\0';
+	openlog(NULL, 0, LOG_USER);
+	syslog(LOG_INFO, "Closed connection from %s", thrData->ip4add);
+	closelog();
+	thrData->threadComplete = true;
+	pthread_mutex_unlock(thrData->mutex);
+	return thrData;
+}
+
+thread_data_t* allocAndInitThreadData(int clientFd, int logFd, struct sockaddr_in* cInfo, pthread_mutex_t* mutex) {
+	//init thread data struct
+	//allocate thread data struct
+	thread_data_t* thd = (thread_data_t*)calloc(1, sizeof(thread_data_t));
+	if (thd!=NULL) {
+		thd->clientFd=clientFd;
+		thd->logFd=logFd;
+		thd->mutex=mutex;
+		thd->threadComplete=false;
+		inet_ntop(AF_INET, &cInfo->sin_addr, thd->ip4add, INET_ADDRSTRLEN);
+		// allocate data buffer
+		thd->dataBuff=(char*)malloc((1+BUFFER_SIZE)*sizeof(char));
+		if (thd->dataBuff==NULL) {
+			free(thd);
+			return NULL;
+		}
+	}
+	return thd;
+}
+
 int daemonize(int srvfd){
 	pid_t pid = fork();
 	if(pid<0) {
@@ -79,7 +136,8 @@ int daemonize(int srvfd){
 
 	pid = fork();
 	if (pid<0) exit(EXIT_FAILURE);
-	if (pid>0) exit(EXIT_SUCCESS);
+	if (pid>0) exit(EXIT_SUCCESS); //exit parent proc
+	//continue with child proc, daemon
 	umask(0);
 	chdir("/");
 	for (int i=0; i<INR_OPEN_MAX; i++) {
@@ -121,6 +179,9 @@ int main(int argc, char** argv){
 	hints.ai_family = AF_INET;
 	hints.ai_socktype = SOCK_STREAM;
 	hints.ai_flags = AI_PASSIVE;
+	//threading
+	pthread_mutex_t mutex;
+	SLIST_INIT(&head);
 	if(0!=getaddrinfo(NULL, "9000", &hints, &servinfo)) {
 		printf("Error %d (%s) when getting addrinfo\n", errno, strerror(errno));
 		exit(EXIT_FAILURE);
@@ -142,23 +203,26 @@ int main(int argc, char** argv){
 		exit(EXIT_FAILURE);
 	}
 
-	// allocate data buffer
-	if( NULL==( data=(char*)malloc((1+BUFFER_SIZE)*sizeof(char)) ) ) bRun=false;
-
 	if(!bRun) { //if any errors, close all and exit
 		closeAll(srvfd, cfd, fd);
 		exit(EXIT_FAILURE);
 	} else {    //else subscribe to signals, listen for incoming connections and signals, continue running.
 		if(bDaemon) bRun = (daemonize(srvfd) == 0 ? true : false);
 		bRun = (0==sigsubscribe(signalHandler) ? true : false);
-
 	}
+
+
 	//listen, accept, connect and respond
 	socklen_t cAddrLen=0;
 	struct sockaddr_in cInfo;
-	char ip4add[INET_ADDRSTRLEN]; //ipv4
+
 	//listen
-	if(bRun) listen(srvfd, LISTEN_BACKLOG);
+	//prepare for threading - init mutex
+	if(bRun) {
+		listen(srvfd, LISTEN_BACKLOG);
+		pthread_mutex_init(&mutex, NULL);
+	}
+	//running the server
 	while(bRun) {
 		if(caught_sigint || caught_sigterm) {
 			writeMsgToSyslog(LOG_USER, LOG_INFO, "Caught signal, exiting");
@@ -170,24 +234,24 @@ int main(int argc, char** argv){
 		cAddrLen=sizeof(cInfo);
 		cfd = accept(srvfd, (struct sockaddr*)&cInfo, &cAddrLen);
 		if(cfd>0){
-			inet_ntop(AF_INET, &cInfo.sin_addr, ip4add, INET_ADDRSTRLEN);
-			openlog(NULL, 0, LOG_USER);
-			syslog(LOG_INFO, "Accepted connection from %s", ip4add);
-			closelog();
-			ssize_t recieved = recv(cfd, data, BUFFER_SIZE*sizeof(char), 0);//MSG_WAITALL
-			shutdown(cfd, SHUT_RD);
-			if (recieved>BUFFER_SIZE) {
-				shutdown(cfd, SHUT_RDWR);
-				close(cfd);
-				continue;
+			//allocate and init thread data struct
+			thread_data_t* thd = allocAndInitThreadData(cfd, fd, &cInfo, &mutex);
+			//allocate threads list node
+			struct threads_list_node_t* node = (struct threads_list_node_t*)calloc(1, sizeof(struct threads_list_node_t));
+			//init node
+			node->thrData=thd;
+			//insert node into the list
+			SLIST_INSERT_HEAD(&head, node, nodes);
+			pthread_create(&thd->threadId, NULL, rcvAndSndThread, thd);
+		}
+		struct threads_list_node_t* nodep=NULL;
+		SLIST_FOREACH_SAFE(nodep, &head, nodes, nodep->nodes.sle_next) {
+			if (nodep->thrData->threadComplete) {
+				pthread_join(nodep->thrData->threadId, NULL);
+				free(nodep->thrData->dataBuff);
+				free(nodep->thrData);
+				SLIST_REMOVE(&head, nodep, threads_list_node_t, nodes );
 			}
-			appendtofile(&fd, data);
-			ssize_t sent = appendFromFileToBuffAndSend(&cfd, &fd, data);
-			if(sent==-1) printf("Error %d (%s) when sending data to a client\n", errno, strerror(errno));
-			data[0]='\0';
-			openlog(NULL, 0, LOG_USER);
-			syslog(LOG_INFO, "Closed connection from %s", ip4add);
-			closelog();
 		}
 	}
 	closeAll(srvfd, cfd, fd);

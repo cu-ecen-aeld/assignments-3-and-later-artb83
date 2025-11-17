@@ -4,7 +4,7 @@ TARGET=aesdsocket
 SRCS=aesdsocket.c
 HFILES=aesdsocket.h
 CC=gcc
-LIBS=-lc
+LIBS=-lc -lpthread
 CFLAGS=-g -Wall -Werror
 OBJS=$(SRCS:.c=.o)
 
