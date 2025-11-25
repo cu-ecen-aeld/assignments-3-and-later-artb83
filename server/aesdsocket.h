@@ -12,9 +12,11 @@
 #include <sys/types.h>
 #include "queue.h"
 
+#define HEAD_SL head_sl
+
 typedef struct {
     int clientFd;
-    int logFd;
+    int* logFd;
     char* dataBuff;
     pthread_t threadId;
     pthread_mutex_t* mutex;
@@ -40,7 +42,7 @@ int sigsubscribe(void* handler);
 
 //threading
 //init thread data struct
-thread_data_t* allocAndInitThreadData(int clientFd, int logFd, struct sockaddr_in* cInfo, pthread_mutex_t* mutex);
+thread_data_t* allocAndInitThreadData(int clientFd, int* logFd, struct sockaddr_in* cInfo, pthread_mutex_t* mutex);
 
 
 #endif //SERVER_AESDSOCKET_H

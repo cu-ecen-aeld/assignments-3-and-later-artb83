@@ -17,7 +17,16 @@
 
 static bool caught_sigint=false;
 static bool caught_sigterm=false;
-static SLIST_HEAD(head_sl, threads_list_node_t) head;
+static SLIST_HEAD(HEAD_SL, threads_list_node_t) head;
+
+int listCount(void){
+	int nEntries=0;
+	struct threads_list_node_t* nodep=NULL;
+	SLIST_FOREACH(nodep, &head, nodes) {
+		nEntries++;
+	}
+	return nEntries;
+}
 
 void closeAll(int sfd, int cfd, int fd) {
 	closelog();
@@ -26,20 +35,38 @@ void closeAll(int sfd, int cfd, int fd) {
 	close(cfd);
 	close(fd);
 	remove("/var/tmp/aesdsocketdata");
-	if(head.slh_first!=NULL)releaseThreadResourcesFromList();
+	if(!SLIST_EMPTY(&head))releaseThreadResourcesFromList();
+	// releaseThreadResourcesFromList();
 }
+
+//Very inefficient because of single linked list
 void releaseThreadResourcesFromList(void) {
-	struct threads_list_node_t* nodep=NULL;
-	SLIST_FOREACH_SAFE(nodep, &head, nodes, nodep->nodes.sle_next) {
+	printf("\nRun list release\n");
+
+	struct threads_list_node_t* nodep=head.slh_first;
+	struct threads_list_node_t* nextNodep=nodep;
+	//printf("Threads list size %d nodes before release\n", listCount());
+	while(nodep != NULL) {
+		// printf("\nNode release\n");
+		// printf("nodep=%p\n", nodep);
+		nextNodep = nodep->nodes.sle_next;
+		printf("nextNodep=%p\n", nextNodep);
 		pthread_join(nodep->thrData->threadId, NULL);
 		pthread_mutex_unlock(nodep->thrData->mutex);
 		pthread_mutex_destroy(nodep->thrData->mutex);
 		close(nodep->thrData->clientFd);
-		close(nodep->thrData->logFd);
-		free(nodep->thrData->dataBuff);
-		free(nodep->thrData);
-		SLIST_REMOVE(&head, nodep, threads_list_node_t, nodes );
+		close(*nodep->thrData->logFd);
+		if (nodep->thrData->dataBuff && nodep->thrData) free(nodep->thrData->dataBuff);
+		if (nodep->thrData) {
+			free(nodep->thrData);
+			nodep->thrData = NULL;
+		}
+		// printf("nodep=%p before free\n", nodep);
+		free(nodep);
+		nodep=nextNodep;
+		// printf("nodep=%p after free\n", nodep);
 	}
+	// printf("List release complete\n");
 }
 static void signalHandler(int numOfSignal){
 	if( numOfSignal == SIGINT ) caught_sigint = true;
@@ -92,8 +119,10 @@ void* rcvAndSndThread(void* thrArg) {
 		pthread_mutex_unlock(thrData->mutex);
 		return thrData;
 	}
-	appendtofile(&thrData->logFd, thrData->dataBuff);
-	ssize_t sent=appendFromFileToBuffAndSend(&thrData->clientFd, &thrData->logFd, thrData->dataBuff);
+	// bool canstop=false;
+	// if(0==strcmp(thrData->dataBuff, "stop\n")) canstop=true;
+	appendtofile(thrData->logFd, thrData->dataBuff);
+	ssize_t sent=appendFromFileToBuffAndSend(&thrData->clientFd, thrData->logFd, thrData->dataBuff);
 	if(sent==-1) printf("Error %d (%s) when sending data to a client\n", errno, strerror(errno));
 	thrData->dataBuff[0]='\0';
 	openlog(NULL, 0, LOG_USER);
@@ -101,10 +130,11 @@ void* rcvAndSndThread(void* thrArg) {
 	closelog();
 	thrData->threadComplete = true;
 	pthread_mutex_unlock(thrData->mutex);
+	// if(canstop) kill(getpid(),SIGTERM);
 	return thrData;
 }
 
-thread_data_t* allocAndInitThreadData(int clientFd, int logFd, struct sockaddr_in* cInfo, pthread_mutex_t* mutex) {
+thread_data_t* allocAndInitThreadData(int clientFd, int* logFd, struct sockaddr_in* cInfo, pthread_mutex_t* mutex) {
 	//init thread data struct
 	//allocate thread data struct
 	thread_data_t* thd = (thread_data_t*)calloc(1, sizeof(thread_data_t));
@@ -235,7 +265,7 @@ int main(int argc, char** argv){
 		cfd = accept(srvfd, (struct sockaddr*)&cInfo, &cAddrLen);
 		if(cfd>0){
 			//allocate and init thread data struct
-			thread_data_t* thd = allocAndInitThreadData(cfd, fd, &cInfo, &mutex);
+			thread_data_t* thd = allocAndInitThreadData(cfd, &fd, &cInfo, &mutex);
 			//allocate threads list node
 			struct threads_list_node_t* node = (struct threads_list_node_t*)calloc(1, sizeof(struct threads_list_node_t));
 			//init node
@@ -246,11 +276,15 @@ int main(int argc, char** argv){
 		}
 		struct threads_list_node_t* nodep=NULL;
 		SLIST_FOREACH_SAFE(nodep, &head, nodes, nodep->nodes.sle_next) {
-			if (nodep->thrData->threadComplete) {
+			if (nodep->thrData->dataBuff!=NULL && nodep->thrData->threadComplete) {
+				printf("Threads list size %d nodes\n", listCount());
+				printf("Release data buffer of complete thread\n");
 				pthread_join(nodep->thrData->threadId, NULL);
-				free(nodep->thrData->dataBuff);
-				free(nodep->thrData);
-				SLIST_REMOVE(&head, nodep, threads_list_node_t, nodes );
+				if(nodep->thrData->dataBuff) {
+					free(nodep->thrData->dataBuff);
+					nodep->thrData->dataBuff=NULL;
+				}
+				printf("Data release complete\n");
 			}
 		}
 	}
