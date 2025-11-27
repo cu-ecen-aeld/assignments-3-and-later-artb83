@@ -5,7 +5,7 @@
 #ifndef SERVER_AESDSOCKET_H
 #define SERVER_AESDSOCKET_H
 
-#define LISTEN_BACKLOG 50
+#define LISTEN_BACKLOG 128
 #define BUFFER_SIZE 10*1024*1024
 #include<pthread.h>
 #include <stdbool.h>
@@ -31,7 +31,7 @@ struct threads_list_node_t{
 };
 
 
-void closeAll(int sfd, int cfd, int fd);
+void closeAll(int sfd, int cfd, int fd, struct pollfd* psrvfd);
 void releaseThreadResourcesFromList(void);
 static void signalHandler(int numOfSignal);
 void writeMsgToSyslog(int log_facility, int log_priority, const char* msgToLog);
