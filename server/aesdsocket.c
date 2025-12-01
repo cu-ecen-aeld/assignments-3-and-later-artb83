@@ -12,6 +12,7 @@
 #include <fcntl.h>
 #include <linux/fs.h>
 #include <sys/poll.h>
+#include <time.h> //for timestamps
 #include "aesdsocket.h"
 
 #include <linux/limits.h>
@@ -225,12 +226,14 @@ int main(int argc, char** argv){
 		printf("Error %d (%s) when creating struct pollfd*\n", errno, strerror(errno));
 		exit(EXIT_FAILURE);
 	}
-	srvfd=socket(servinfo->ai_family, servinfo->ai_socktype, servinfo->ai_protocol);
+
+	srvfd=socket(servinfo->ai_family, (servinfo->ai_socktype | SOCK_NONBLOCK), servinfo->ai_protocol);
 	if(srvfd<0) {
 		printf("Error %d (%s) when creating a socket\n", errno, strerror(errno));
 		exit(EXIT_FAILURE);
 	}
-	psrvfd->fd = srvfd; //set server socket for polling
+	//setup a server's non-blocking socket: polling, reuse address and bind
+	psrvfd->fd = srvfd;
 	psrvfd->events|=POLLIN;
 	int yes=1;
 	int rv=0;
@@ -261,9 +264,13 @@ int main(int argc, char** argv){
 		listen(srvfd, LISTEN_BACKLOG);
 		pthread_mutex_init(&mutex, NULL);
 	}
+
+	struct timespec base;
+	struct timespec timeStamp;
+	clock_gettime(CLOCK_MONOTONIC, &base);
+	__time_t dif=0;
 	//running the server
 	while(bRun) {
-		int ready=poll(psrvfd, 1, -1);
 		if(caught_sigint || caught_sigterm) {
 			writeMsgToSyslog(LOG_USER, LOG_INFO, "Caught signal, exiting");
 			closeAll(srvfd, cfd, fd, psrvfd);
@@ -271,9 +278,16 @@ int main(int argc, char** argv){
 			printf("\nCaught signal, exiting\n");
 			exit(EXIT_SUCCESS);
 		}
-		cAddrLen=sizeof(cInfo);
+		int ready=poll(psrvfd, 1, POLL_TIMEOUT_MSEC);
+		clock_gettime(CLOCK_MONOTONIC, &timeStamp);
+		if ((dif=(timeStamp.tv_sec-base.tv_sec))>=10) {
+			clock_gettime(CLOCK_MONOTONIC, &base);
+			printf("TimeStamp=%ld - ten\n", dif);
+		}
 		if (ready>0) printf("Ready=%d - accept\n", ready);
+		cAddrLen=sizeof(cInfo);
 		cfd = accept(srvfd, (struct sockaddr*)&cInfo, &cAddrLen);
+		if (cfd==EAGAIN) continue;
 		if(cfd>0){
 			//allocate and init thread data struct
 			thread_data_t* thd = allocAndInitThreadData(cfd, &fd, &cInfo, &mutex);

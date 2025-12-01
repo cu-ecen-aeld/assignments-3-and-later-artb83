@@ -13,6 +13,7 @@
 #include "queue.h"
 
 #define HEAD_SL head_sl
+#define POLL_TIMEOUT_MSEC 100
 
 typedef struct {
     int clientFd;
@@ -24,6 +25,13 @@ typedef struct {
     struct sockaddr_in* cInfo;
     bool threadComplete;
 }thread_data_t;
+
+typedef struct {
+    int* logFd;
+    pthread_t threadId;
+    pthread_mutex_t* mutex;
+    bool threadComplete;
+}timestamp_thread_data_t;
 
 struct threads_list_node_t{
     thread_data_t*       thrData;
