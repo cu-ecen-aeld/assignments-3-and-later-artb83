@@ -14,7 +14,7 @@
 
 #define HEAD_SL head_sl
 #define POLL_TIMEOUT_MSEC 100
-
+#define TIMESTAMP_STRLEN 128
 typedef struct {
     int clientFd;
     int* logFd;

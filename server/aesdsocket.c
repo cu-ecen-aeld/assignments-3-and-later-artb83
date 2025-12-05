@@ -264,11 +264,11 @@ int main(int argc, char** argv){
 		listen(srvfd, LISTEN_BACKLOG);
 		pthread_mutex_init(&mutex, NULL);
 	}
-
+	//init timers for timestamps
+	char timeStampStr[TIMESTAMP_STRLEN] = {'\0'};
 	struct timespec base;
 	struct timespec timeStamp;
-	clock_gettime(CLOCK_MONOTONIC, &base);
-	__time_t dif=0;
+	clock_gettime(CLOCK_REALTIME, &base);
 	//running the server
 	while(bRun) {
 		if(caught_sigint || caught_sigterm) {
@@ -279,10 +279,23 @@ int main(int argc, char** argv){
 			exit(EXIT_SUCCESS);
 		}
 		int ready=poll(psrvfd, 1, POLL_TIMEOUT_MSEC);
-		clock_gettime(CLOCK_MONOTONIC, &timeStamp);
-		if ((dif=(timeStamp.tv_sec-base.tv_sec))>=10) {
-			clock_gettime(CLOCK_MONOTONIC, &base);
-			printf("TimeStamp=%ld - ten\n", dif);
+		clock_gettime(CLOCK_REALTIME, &timeStamp);
+		if ((timeStamp.tv_sec-base.tv_sec)>=10) {
+			/*
+			 * strftime
+			 * %F equivalent to %Y-%m-%d date format
+			 * %T The time in 24-hour notation (%H:%M:%S).
+			 * %n Next line char
+			 */
+			struct tm* curTime = localtime(&timeStamp.tv_sec);
+			strftime(timeStampStr, TIMESTAMP_STRLEN, "timestamp:%F %T%n", curTime);
+			pthread_mutex_lock(&mutex);
+			fd = open("/var/tmp/aesdsocketdata", O_CREAT|O_APPEND|O_WRONLY, S_IRUSR|S_IWUSR|S_IRGRP|S_IWGRP);
+			write(fd,timeStampStr,strlen(timeStampStr));
+			close(fd);
+			pthread_mutex_unlock(&mutex);
+			printf("%s\n", timeStampStr);
+			clock_gettime(CLOCK_REALTIME, &base);
 		}
 		if (ready>0) printf("Ready=%d - accept\n", ready);
 		cAddrLen=sizeof(cInfo);
