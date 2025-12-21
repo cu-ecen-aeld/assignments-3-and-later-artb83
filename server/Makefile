@@ -1,20 +1,20 @@
 #For ARM64 cross-compilation add 'CROSS_COMPILER = aarch64-none-linux-gnu-' when making writer.
 
-TARGET=aesdsocket
-SRCS=aesdsocket.c
-HFILES=aesdsocket.h
-CC=gcc
-LIBS=-lc -lpthread
-CFLAGS=-g -Wall -Werror
-OBJS=$(SRCS:.c=.o)
+TARGET ?= aesdsocket
+SRCS ?= aesdsocket.c
+HFILES ?= aesdsocket.h
+CC ?= $(CROSS_COMPILER)gcc
+LDFLAGS ?= -lc -lpthread
+CFLAGS ?= -g -Wall -Werror
+OBJS ?= $(SRCS:.c=.o)
 
 all: $(TARGET)
 
 %.o:%.c $(HFILES)
-	$(CROSS_COMPILER)$(CC) $(CFLAGS) -c $(SRCS) -o $(TARGET).o
+	$(CC) $(CFLAGS) -c $(SRCS) -o $(TARGET).o
 
 $(TARGET): $(OBJS)
-	$(CROSS_COMPILER)$(CC) $(CFLAGS) $(OBJS) $(LIBS) -o $(TARGET)
+	$(CC) $(CFLAGS) $(OBJS) $(LDFLAGS) -o $(TARGET)
 
 
 clean:
