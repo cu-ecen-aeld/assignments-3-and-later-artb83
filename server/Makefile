@@ -1,9 +1,9 @@
-#For ARM64 cross-compilation add 'CROSS_COMPILER = aarch64-none-linux-gnu-' when making writer.
+#For ARM64 cross-compilation add 'CROSS_COMPILE = aarch64-none-linux-gnu-' when making writer.
 
 TARGET ?= aesdsocket
 SRCS ?= aesdsocket.c
 HFILES ?= aesdsocket.h
-CC ?= $(CROSS_COMPILER)gcc
+CC ?= $(CROSS_COMPILE)gcc
 LDFLAGS ?= -lc -lpthread
 CFLAGS ?= -g -Wall -Werror
 OBJS ?= $(SRCS:.c=.o)
