@@ -32,6 +32,26 @@ struct aesd_buffer_entry *aesd_circular_buffer_find_entry_offset_for_fpos(struct
     /**
     * TODO: implement per description
     */
+    struct aesd_buffer_entry* curr_buff_entry = NULL;
+    // uint8_t start_index = 0;
+    size_t overall_buff_chrs_len = 0;
+    size_t chr_offset_mod = 0;
+    uint8_t rd_pos = buffer->out_offs;
+    for(uint8_t cur_rd_pos = rd_pos;
+        cur_rd_pos<rd_pos+AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED; cur_rd_pos++) {
+        curr_buff_entry=&(buffer->entry[cur_rd_pos%AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED]);
+        if (curr_buff_entry!=NULL) {
+            overall_buff_chrs_len+=curr_buff_entry->size;
+            if(char_offset>=overall_buff_chrs_len) continue;
+            if(char_offset==0) {
+                *entry_offset_byte_rtn = 0;
+            }else {
+                chr_offset_mod = overall_buff_chrs_len % char_offset;
+                *entry_offset_byte_rtn = (0==chr_offset_mod ? 0 : curr_buff_entry->size - chr_offset_mod);
+            }
+            return curr_buff_entry;
+        }
+    }
     return NULL;
 }
 
@@ -47,6 +67,14 @@ void aesd_circular_buffer_add_entry(struct aesd_circular_buffer *buffer, const s
     /**
     * TODO: implement per description
     */
+    if(buffer->in_offs == AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED) {
+        buffer->full=true;
+        buffer->in_offs = 0;
+        ++buffer->out_offs;
+        buffer->out_offs %= AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED;
+    }
+    buffer->entry[buffer->in_offs] = *add_entry;
+    ++buffer->in_offs;
 }
 
 /**
@@ -56,3 +84,5 @@ void aesd_circular_buffer_init(struct aesd_circular_buffer *buffer)
 {
     memset(buffer,0,sizeof(struct aesd_circular_buffer));
 }
+
+
