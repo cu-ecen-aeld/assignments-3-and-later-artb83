@@ -1,20 +1,30 @@
-#For ARM64 cross-compilation add 'CROSS_COMPILE = aarch64-none-linux-gnu-g' when building exec.
+# See example Makefile from scull project
+# Comment/uncomment the following line to disable/enable debugging
+#DEBUG = y
 
-TARGET ?= aesd-circular-buffer
-SRCS ?= aesd-circular-buffer.c
-HFILES ?= aesd-circular-buffer.h
-CC ?= gcc
-LDFLAGS ?= -lc -lpthread
-CFLAGS ?= -g -Wall -Werror
-OBJS ?= $(SRCS:.c=.o)
+# Add your debugging flag (or not) to CFLAGS
+ifeq ($(DEBUG),y)
+  DEBFLAGS = -O -g -DSCULL_DEBUG # "-O" is needed to expand inlines
+else
+  DEBFLAGS = -O2
+endif
 
-all: $(TARGET)
+EXTRA_CFLAGS += $(DEBFLAGS)
 
-%.o:%.c $(HFILES)
-	$(CROSS_COMPILE)$(CC) $(CFLAGS) -c $(SRCS) -o $(TARGET).o
+ifneq ($(KERNELRELEASE),)
+# call from kernel build system
+obj-m	:= aesdchar.o
+aesdchar-y := aesd-circular-buffer.o main.o
+else
 
-$(TARGET): $(OBJS) aesd-circular-buffer-main.c
-	$(CROSS_COMPILE)$(CC) $(CFLAGS) $(OBJS) $(LDFLAGS) aesd-circular-buffer-main.c -o $(TARGET)
+KERNELDIR ?= /lib/modules/$(shell uname -r)/build
+PWD       := $(shell pwd)
+
+modules:
+	$(MAKE) -C $(KERNELDIR) M=$(PWD) modules
+
+endif
 
 clean:
-	rm -rf $(TARGET) $(OBJS)
+	rm -rf *.o *~ core .depend .*.cmd *.ko *.mod.c .tmp_versions
+
