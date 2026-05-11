@@ -17,6 +17,10 @@
 #include <linux/types.h>
 #include <linux/cdev.h>
 #include <linux/fs.h> // file_operations
+#include <linux/string.h> //string operations
+#include <linux/mutex.h>
+#include <linux/container_of.h>
+
 #include "aesdchar.h"
 int aesd_major =   0; // use dynamic major
 int aesd_minor =   0;
@@ -32,6 +36,9 @@ int aesd_open(struct inode *inode, struct file *filp)
     /**
      * TODO: handle open
      */
+    struct aesd_dev* dev;
+    dev = container_of(inode->i_cdev, struct aesd_dev, cdev);
+    filp->private_data=dev;
     return 0;
 }
 
@@ -56,13 +63,45 @@ ssize_t aesd_read(struct file *filp, char __user *buf, size_t count,
 }
 
 ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
-                loff_t *f_pos)
-{
+                loff_t *f_pos) {
     ssize_t retval = -ENOMEM;
     PDEBUG("write %zu bytes with offset %lld",count,*f_pos);
     /**
      * TODO: handle write
      */
+    //Buffer each command to a single buffer entry, until terminated command detected.
+    struct aesd_dev* dev = filp->private_data;
+    size_t buff_entry_curr_size = dev->buff_entry.size;
+    if(mutex_lock_interruptible(&dev->lock))
+        return -ERESTARTSYS;
+    char* new_buff = (char*)kmalloc((count+buff_entry_curr_size)*sizeof(char), GFP_KERNEL);
+    if (!new_buff) {
+        goto error;
+    }
+    //Copy data (if exists) from buffer entry into new allocated buffer. Release old ptr from the entry.
+    if(dev->buff_entry.buffptr) {
+        memcpy(new_buff, dev->buff_entry.buffptr, buff_entry_curr_size);
+        kfree(dev->buff_entry.buffptr);
+    }
+
+    //Assign new allocated buffer to circular buffer entry and update buffer entry size.
+    //Copy/concatenate data from user space buffer (buf) into new kernel space buffer.
+    dev->buff_entry.buffptr = new_buff;
+    if( retval=copy_from_user(new_buff+buff_entry_curr_size, buf, count) ) {
+        retval = -EFAULT;
+        goto error;
+    }
+    buff_entry_curr_size+= count;
+    dev->buff_entry.size = buff_entry_curr_size;
+
+    //If terminated command (with '\n') detected, add entry to the circ-buffer, reset buffer entry size to 0.
+    if(dev->buff_entry.buffptr[buff_entry_curr_size-1]=='\n') {
+        const char* old_buff = aesd_circular_buffer_add_entry(&dev->circ_buff, &dev->buff_entry);
+        if (old_buff) kfree(old_buff);
+        dev->buff_entry.size = 0;
+    }
+error:
+    mutex_unlock(&dev->lock);
     return retval;
 }
 struct file_operations aesd_fops = {
@@ -105,8 +144,6 @@ int aesd_init_module(void)
     /**
      * TODO: initialize the AESD specific portion of the device
      */
-    aesd_circular_buffer_init(&aesd_device.circ_buff);
-    memset(&aesd_device.buff_entry, 0, sizeof(struct aesd_buffer_entry));
     mutex_init(&aesd_device.lock);
 
     result = aesd_setup_cdev(&aesd_device);
@@ -127,7 +164,11 @@ void aesd_cleanup_module(void)
     /**
      * TODO: cleanup AESD specific poritions here as necessary
      */
-
+    if(aesd_device.buff_entry.buffptr) kfree(aesd_device.buff_entry.buffptr);
+    for (ssize_t i=0; i<AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED; i++) {
+        if(aesd_device.circ_buff.entry[i].buffptr!=NULL) kfree(aesd_device.circ_buff.entry[i].buffptr);
+    }
+    mutex_destroy(&aesd_device.lock);
     unregister_chrdev_region(devno, 1);
 }
 
