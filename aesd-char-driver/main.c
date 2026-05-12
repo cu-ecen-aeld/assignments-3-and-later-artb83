@@ -59,6 +59,22 @@ ssize_t aesd_read(struct file *filp, char __user *buf, size_t count,
     /**
      * TODO: handle read
      */
+    size_t cur_buff_entry_fpos = 0;
+    struct aesd_dev* dev = filp->private_data;
+    if(mutex_lock_interruptible(&dev->lock))
+        return -ERESTARTSYS;
+    struct aesd_buffer_entry* be_ptr=aesd_circular_buffer_find_entry_offset_for_fpos(&dev->circ_buff, *f_pos, &cur_buff_entry_fpos);
+    if(be_ptr) {
+        size_t read_chars = ( (count>(be_ptr->size-cur_buff_entry_fpos) ) ? be_ptr->size-cur_buff_entry_fpos : count );
+        if( copy_to_user(buf, be_ptr->buffptr+cur_buff_entry_fpos, read_chars) ) {
+            retval=-EFAULT;
+            goto error;
+        }
+        retval = read_chars;
+        *f_pos+=read_chars;
+    }
+error:
+    mutex_unlock(&dev->lock);
     return retval;
 }
 
