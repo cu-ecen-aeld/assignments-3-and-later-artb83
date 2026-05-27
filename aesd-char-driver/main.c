@@ -56,7 +56,7 @@ ssize_t aesd_read(struct file *filp, char __user *buf, size_t count,
                 loff_t *f_pos)
 {
     ssize_t retval = 0;
-    PDEBUG("aesd module read %zu bytes with offset %lld",count,*f_pos);
+    PDEBUG("aesd module read %zu bytes with offset %lld",count, *f_pos);
     /**
      * TODO: handle read
      */
@@ -66,7 +66,12 @@ ssize_t aesd_read(struct file *filp, char __user *buf, size_t count,
         return -ERESTARTSYS;
     struct aesd_buffer_entry* be_ptr=aesd_circular_buffer_find_entry_offset_for_fpos(&dev->circ_buff, *f_pos, &cur_buff_entry_fpos);
     if(be_ptr) {
-        size_t read_chars = ( (count>(be_ptr->size-cur_buff_entry_fpos) ) ? be_ptr->size-cur_buff_entry_fpos : count );
+        size_t read_chars = be_ptr->size-cur_buff_entry_fpos;
+        read_chars = (read_chars>count ? count : read_chars);
+        PDEBUG("aesd module read %d bytes to read", read_chars);
+        PDEBUG("aesd module read position to read from cur_buff_entry_fpos=%zu", cur_buff_entry_fpos);
+        PDEBUG("aesd module read -> %s from buffptr directly", be_ptr->buffptr);
+        PDEBUG("aesd module read -> %s from buffptr+cur_buff_entry_fpos", be_ptr->buffptr+cur_buff_entry_fpos);
         if( copy_to_user(buf, be_ptr->buffptr+cur_buff_entry_fpos, read_chars) ) {
             retval=-EFAULT;
             goto error;
@@ -76,7 +81,7 @@ ssize_t aesd_read(struct file *filp, char __user *buf, size_t count,
     }
 error:
     mutex_unlock(&dev->lock);
-    PDEBUG("aesd module read %zu bytes with offset %lld - COMPLETE",count,*f_pos);
+    PDEBUG("aesd module read %zu bytes with offset %lld - COMPLETE", count, *f_pos);
     return retval;
 }
 
@@ -91,12 +96,12 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
     struct aesd_dev* dev = filp->private_data;
     size_t buff_entry_curr_size = dev->buff_entry.size;
     if(mutex_lock_interruptible(&dev->lock))
-        return -ERESTARTSYS;
+        return -EFAULT;
     char* new_buff = (char*)kmalloc((count+buff_entry_curr_size)*sizeof(char), GFP_KERNEL);
     if (!new_buff) {
         goto error;
     }
-    //Copy data (if exists) from buffer entry into new allocated buffer. Release old ptr from the entry.
+    //Copy data (if exists) from buffer entry into new allocated buffer.
     if(dev->buff_entry.buffptr) {
         memcpy(new_buff, dev->buff_entry.buffptr, buff_entry_curr_size);
         kfree(dev->buff_entry.buffptr);
@@ -109,6 +114,7 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
         retval = -EFAULT;
         goto error;
     }
+    retval = count;
     buff_entry_curr_size+= count;
     dev->buff_entry.size = buff_entry_curr_size;
     PDEBUG("aesd module write copied from user %zu bytes",count);
@@ -116,12 +122,12 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
     //If terminated command (with '\n') detected, add entry to the circ-buffer, reset buffer entry size to 0.
     if(dev->buff_entry.buffptr[buff_entry_curr_size-1]=='\n') {
         const char* old_buff = aesd_circular_buffer_add_entry(&dev->circ_buff, &dev->buff_entry);
-        if (old_buff) kfree(old_buff);
+        kfree(old_buff);
         dev->buff_entry.size = 0;
     }
 error:
     mutex_unlock(&dev->lock);
-    PDEBUG("aesd module write %zu bytes with offset %lld - COMPLETE",count,*f_pos);
+    PDEBUG("aesd module write %zu bytes with offset %lld retval=%zu - COMPLETE",count,*f_pos, retval);
     return retval;
 }
 struct file_operations aesd_fops = {
@@ -146,15 +152,12 @@ static int aesd_setup_cdev(struct aesd_dev *dev)
     return err;
 }
 
-
-
 int aesd_init_module(void)
 {
     dev_t dev = 0;
     int result;
     PDEBUG("aesd module init");
-    result = alloc_chrdev_region(&dev, aesd_minor, 1,
-            "aesdchar");
+    result = alloc_chrdev_region(&dev, aesd_minor, 1, "aesdchar");
     aesd_major = MAJOR(dev);
     if (result < 0) {
         printk(KERN_WARNING "Can't get major %d\n", aesd_major);
@@ -187,13 +190,18 @@ void aesd_cleanup_module(void)
     /**
      * TODO: cleanup AESD specific poritions here as necessary
      */
+
     PDEBUG("aesd module clean-up - before kfree");
     if(aesd_device.buff_entry.buffptr) kfree(aesd_device.buff_entry.buffptr);
     PDEBUG("aesd module clean-up - after kfree");
     for (ssize_t i=0; i<AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED; i++) {
-        if(aesd_device.circ_buff.entry[i].buffptr!=NULL) kfree(aesd_device.circ_buff.entry[i].buffptr);
+        PDEBUG("aesd module clean-up - free circ buffer entry size=%zu bytes", aesd_device.circ_buff.entry[i].size);
+        PDEBUG("aesd module clean-up - free circ buffer entry ptr=%px", aesd_device.circ_buff.entry[i].buffptr);
+        kfree(&aesd_device.circ_buff.entry[i].buffptr);
     }
+    PDEBUG("aesd module clean-up - before mutex destroy");
     mutex_destroy(&aesd_device.lock);
+    PDEBUG("aesd module clean-up - after mutex destroy");
     unregister_chrdev_region(devno, 1);
     PDEBUG("aesd module clean-up - COMPLETE");
 }
