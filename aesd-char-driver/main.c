@@ -64,7 +64,9 @@ ssize_t aesd_read(struct file *filp, char __user *buf, size_t count,
     struct aesd_dev* dev = filp->private_data;
     if(mutex_lock_interruptible(&dev->lock))
         return -ERESTARTSYS;
-    struct aesd_buffer_entry* be_ptr=aesd_circular_buffer_find_entry_offset_for_fpos(&dev->circ_buff, *f_pos, &cur_buff_entry_fpos);
+    struct aesd_buffer_entry* be_ptr=aesd_circular_buffer_find_entry_offset_for_fpos(&dev->circ_buff,
+                                                                                    *f_pos,
+                                                                                    &cur_buff_entry_fpos);
     if(be_ptr) {
         size_t read_chars = be_ptr->size-cur_buff_entry_fpos;
         read_chars = (read_chars>count ? count : read_chars);
@@ -104,7 +106,7 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
     //Copy data (if exists) from buffer entry into new allocated buffer.
     if(dev->buff_entry.buffptr) {
         memcpy(new_buff, dev->buff_entry.buffptr, buff_entry_curr_size);
-        kfree(dev->buff_entry.buffptr);
+        //kfree(dev->buff_entry.buffptr);
     }
 
     //Assign new allocated buffer to circular buffer entry and update buffer entry size.
@@ -118,12 +120,15 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
     buff_entry_curr_size+= count;
     dev->buff_entry.size = buff_entry_curr_size;
     PDEBUG("aesd module write copied from user %zu bytes",count);
+    PDEBUG("aesd module write copied string=%s of %zu bytes", dev->buff_entry.buffptr, count);
+    PDEBUG("aesd module write new buffer entry size=%zu bytes", dev->buff_entry.size);
 
     //If terminated command (with '\n') detected, add entry to the circ-buffer, reset buffer entry size to 0.
     if(dev->buff_entry.buffptr[buff_entry_curr_size-1]=='\n') {
         const char* old_buff = aesd_circular_buffer_add_entry(&dev->circ_buff, &dev->buff_entry);
         kfree(old_buff);
         dev->buff_entry.size = 0;
+        PDEBUG("aesd module write new buffer entry added old entry_ptr=%px", old_buff);
     }
 error:
     mutex_unlock(&dev->lock);

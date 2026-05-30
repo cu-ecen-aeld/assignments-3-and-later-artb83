@@ -22,12 +22,22 @@ int main() {
         bes[i].size = strlen(buff);
         bes[i].buffptr = buff;
     }
-    //Write entries to circular buffer
+    // //Write entries to circular buffer
     struct aesd_circular_buffer circBuffer;
     aesd_circular_buffer_init(&circBuffer);
     for(int i=0; i < 10; i++) {
         aesd_circular_buffer_add_entry(&circBuffer, &bes[i]);
     }
+
+    //Debug assignment 8 - aesdchar driver
+     // snprintf((char*)bes[0].buffptr, 24, "%s\n", "hello");
+     // bes[0].size = strlen(bes[0].buffptr);
+     // snprintf((char*)bes[1].buffptr, 24, "%s\n", "Arthur");
+     // bes[1].size = strlen(bes[1].buffptr);
+     //
+     // for(int i=0; i < 2; i++) {
+     //     aesd_circular_buffer_add_entry(&circBuffer, &bes[i]);
+     // }
 
     //Perform some operations
     size_t entry_offset_byte_ret = 0;
