@@ -52,7 +52,7 @@ void releaseThreadResourcesFromList(void) {
 		pthread_mutex_unlock(nodep->thrData->mutex);
 		pthread_mutex_destroy(nodep->thrData->mutex);
 		close(nodep->thrData->clientFd);
-		close(*nodep->thrData->logFd);
+		close(*nodep->thrData->storageFd);
 		if (nodep->thrData->dataBuff && nodep->thrData) free(nodep->thrData->dataBuff);
 		if (nodep->thrData) {
 			free(nodep->thrData);
@@ -72,9 +72,9 @@ void writeMsgToSyslog(int log_facility, int log_priority, const char* msgToLog) 
 	closelog();
 }
 
-ssize_t appendtofile(int* fd, char* data) {
+ssize_t appendToStorage(int* fd, char* data) {
 	char* newline=strstr(data, "\n");
-	if( newline!=NULL && 0<(*fd = open("/var/tmp/aesdsocketdata", O_CREAT|O_APPEND|O_WRONLY, S_IRUSR|S_IWUSR|S_IRGRP|S_IWGRP)) ){
+	if( newline!=NULL && 0<(*fd = open(DATA_STORAGE_PATH, O_CREAT|O_APPEND|O_WRONLY, S_IRUSR|S_IWUSR|S_IRGRP|S_IWGRP)) ){
 		data[newline-data+1]='\0';//terminate string after \n character
 		ssize_t res=write(*fd, data, (newline-data+1)*sizeof(char));
 		close(*fd);
@@ -82,13 +82,13 @@ ssize_t appendtofile(int* fd, char* data) {
 	}
 	return -1;
 }
-ssize_t appendFromFileToBuffAndSend(int* cfd, int* fd, char* buff) {
+ssize_t appendFromStorageToBuffAndSend(int* cfd, int* fd, char* buff) {
 	int nRead = 0;
 	ssize_t res=-1;
-	if( 0<(*fd = open("/var/tmp/aesdsocketdata", O_RDONLY, S_IRUSR|S_IRGRP)) ){
+	if( 0<(*fd = open(DATA_STORAGE_PATH, O_RDONLY, S_IRUSR|S_IRGRP)) ){
 		res=0;
 		while( 0<(nRead = read(*fd, buff, BUFFER_SIZE)) ) {
-			if( 0<(res=send(*cfd, buff, nRead, 0)) ) break; //MSG_FASTOPEN
+			res=send(*cfd, buff, nRead, 0); //MSG_FASTOPEN
 		}
 	}
 	shutdown(*cfd, SHUT_RDWR);
@@ -113,8 +113,8 @@ void* rcvAndSndThread(void* thrArg) {
 		pthread_mutex_unlock(thrData->mutex);
 		return thrData;
 	}
-	appendtofile(thrData->logFd, thrData->dataBuff);
-	ssize_t sent=appendFromFileToBuffAndSend(&thrData->clientFd, thrData->logFd, thrData->dataBuff);
+	appendToStorage(thrData->storageFd, thrData->dataBuff);
+	ssize_t sent=appendFromStorageToBuffAndSend(&thrData->clientFd, thrData->storageFd, thrData->dataBuff);
 	if(sent==-1) printf("Error %d (%s) when sending data to a client\n", errno, strerror(errno));
 	thrData->dataBuff[0]='\0';
 	openlog(NULL, 0, LOG_USER);
@@ -125,13 +125,13 @@ void* rcvAndSndThread(void* thrArg) {
 	return thrData;
 }
 
-thread_data_t* allocAndInitThreadData(int clientFd, int* logFd, struct sockaddr_in* cInfo, pthread_mutex_t* mutex) {
+thread_data_t* allocAndInitThreadData(int clientFd, int* storageFd, struct sockaddr_in* cInfo, pthread_mutex_t* mutex) {
 	//init thread data struct
 	//allocate thread data struct
 	thread_data_t* thd = (thread_data_t*)calloc(1, sizeof(thread_data_t));
 	if (thd!=NULL) {
 		thd->clientFd=clientFd;
-		thd->logFd=logFd;
+		thd->storageFd=storageFd;
 		thd->mutex=mutex;
 		thd->threadComplete=false;
 		inet_ntop(AF_INET, &cInfo->sin_addr, thd->ip4add, INET_ADDRSTRLEN);
@@ -146,6 +146,7 @@ thread_data_t* allocAndInitThreadData(int clientFd, int* logFd, struct sockaddr_
 }
 
 int daemonize(int srvfd){
+	writeMsgToSyslog(LOG_USER, LOG_INFO, "Turning into a daemon");
 	pid_t pid = fork();
 	if(pid<0) {
 		exit(EXIT_FAILURE);
@@ -196,7 +197,7 @@ int main(int argc, char** argv){
 	struct pollfd* psrvfd=NULL;
 	int srvfd = 0; //server
 	int cfd = 0;   //client
-	int fd=0;      //file for incomming stream message
+	int fd=0;      //storage file descriptor for incomming stream message
 	memset(&hints, 0, sizeof(hints));
 	hints.ai_family = AF_INET;
 	hints.ai_socktype = SOCK_STREAM;
@@ -226,8 +227,8 @@ int main(int argc, char** argv){
 	int rv=0;
 	setsockopt(srvfd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int));
 	rv=bind(srvfd, servinfo->ai_addr, servinfo->ai_addrlen);
-	if(servinfo!=NULL)freeaddrinfo(servinfo);
-	if( rv<0 ) {
+	if(servinfo!=NULL) freeaddrinfo(servinfo);
+	if(rv<0) {
 		printf("Error %d (%s) when binding a socket\n", errno, strerror(errno));
 		exit(EXIT_FAILURE);
 	}
@@ -251,11 +252,13 @@ int main(int argc, char** argv){
 		listen(srvfd, LISTEN_BACKLOG);
 		pthread_mutex_init(&mutex, NULL);
 	}
+#if !USE_AESD_CHAR_DEVICE
 	//init timers for timestamps
 	char timeStampStr[TIMESTAMP_STRLEN] = {'\0'};
 	struct timespec base;
 	struct timespec timeStamp;
 	clock_gettime(CLOCK_REALTIME, &base);
+#endif
 	//running the server
 	while(bRun) {
 		if(caught_sigint || caught_sigterm) {
@@ -266,6 +269,7 @@ int main(int argc, char** argv){
 			exit(EXIT_SUCCESS);
 		}
 		poll(psrvfd, 1, POLL_TIMEOUT_MSEC);
+#if !USE_AESD_CHAR_DEVICE
 		clock_gettime(CLOCK_REALTIME, &timeStamp);
 		if ((timeStamp.tv_sec-base.tv_sec)>=10) {
 			/*
@@ -277,19 +281,20 @@ int main(int argc, char** argv){
 			struct tm* curTime = localtime(&timeStamp.tv_sec);
 			strftime(timeStampStr, TIMESTAMP_STRLEN, "timestamp:%F %T%n", curTime);
 			pthread_mutex_lock(&mutex);
-			fd = open("/var/tmp/aesdsocketdata", O_CREAT|O_APPEND|O_WRONLY, S_IRUSR|S_IWUSR|S_IRGRP|S_IWGRP);
+			fd = open(DATA_STORAGE_PATH, O_CREAT|O_APPEND|O_WRONLY, S_IRUSR|S_IWUSR|S_IRGRP|S_IWGRP);
 			write(fd,timeStampStr,strlen(timeStampStr));
 			close(fd);
 			pthread_mutex_unlock(&mutex);
 			clock_gettime(CLOCK_REALTIME, &base);
 		}
+#endif
 		cAddrLen=sizeof(cInfo);
 		cfd = accept(srvfd, (struct sockaddr*)&cInfo, &cAddrLen);
 		if (cfd==EAGAIN) continue;
 		if(cfd>0){
 			//allocate and init thread data struct
 			thread_data_t* thd = allocAndInitThreadData(cfd, &fd, &cInfo, &mutex);
-			//allocate threads list node
+			//allocate threads list node - each new node represents a new thread
 			struct threads_list_node_t* node = (struct threads_list_node_t*)calloc(1, sizeof(struct threads_list_node_t));
 			//init node
 			node->thrData=thd;
