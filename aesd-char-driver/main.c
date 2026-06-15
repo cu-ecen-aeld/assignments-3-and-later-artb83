@@ -19,9 +19,17 @@
 #include <linux/fs.h> // file_operations
 #include <linux/string.h> //string operations
 #include <linux/mutex.h>
-#include <linux/container_of.h>
+
+// Dynamically includes container_of based on the active kernel version
+#include <linux/version.h>
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 16, 0)
+    #include <linux/container_of.h>
+#else
+    #include <linux/kernel.h>
+#endif
 
 #include "aesdchar.h"
+
 int aesd_major =   0; // use dynamic major
 int aesd_minor =   0;
 
