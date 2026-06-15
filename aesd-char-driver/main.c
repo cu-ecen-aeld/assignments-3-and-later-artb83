@@ -19,7 +19,7 @@
 #include <linux/fs.h> // file_operations
 #include <linux/string.h> //string operations
 #include <linux/mutex.h>
-
+#include <linux/slab.h> //for kmalloc and kfree
 // Dynamically includes container_of based on the active kernel version
 #include <linux/version.h>
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 16, 0)
@@ -119,7 +119,7 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
     //Assign new allocated buffer to circular buffer entry and update buffer entry size.
     //Copy/concatenate data from user space buffer (buf) into new kernel space buffer.
     dev->buff_entry.buffptr = new_buff;
-    if( retval=copy_from_user(new_buff+buff_entry_curr_size, buf, count) ) {
+    if( (retval=copy_from_user(new_buff+buff_entry_curr_size, buf, count) )) {
         retval = -EFAULT;
         goto error;
     }
