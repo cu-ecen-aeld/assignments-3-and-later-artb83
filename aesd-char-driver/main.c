@@ -208,7 +208,10 @@ void aesd_cleanup_module(void)
     for (ssize_t i=0; i<AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED; i++) {
         PDEBUG("aesd module clean-up - free circ buffer entry %zu size=%zu bytes", i, aesd_device.circ_buff.entry[i].size);
         PDEBUG("aesd module clean-up - free circ buffer entry ptr=%px", aesd_device.circ_buff.entry[i].buffptr);
-        kfree(&aesd_device.circ_buff.entry[i].buffptr);
+        if(NULL!=aesd_device.circ_buff.entry[i].buffptr) {
+            kfree(&aesd_device.circ_buff.entry[i].buffptr);
+            aesd_device.circ_buff.entry[i].buffptr = NULL;
+        }
     }
     PDEBUG("aesd module clean-up - before mutex destroy");
     mutex_destroy(&aesd_device.lock);
