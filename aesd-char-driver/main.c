@@ -202,13 +202,14 @@ void aesd_cleanup_module(void)
      * TODO: cleanup AESD specific poritions here as necessary
      */
 
-    // PDEBUG("aesd module clean-up be - before kfree");
+    PDEBUG("aesd module clean-up be - before kfree");
     kfree(aesd_device.buff_entry.buffptr);
-    // PDEBUG("aesd module clean-up be - after kfree");
+    PDEBUG("aesd module clean-up be - after kfree");
     for (ssize_t i=0; i<AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED; i++) {
         PDEBUG("aesd module clean-up - free circ buffer entry %zu size=%zu bytes", i, aesd_device.circ_buff.entry[i].size);
         PDEBUG("aesd module clean-up - free circ buffer entry ptr=%px", aesd_device.circ_buff.entry[i].buffptr);
-        if(NULL!=aesd_device.circ_buff.entry[i].buffptr) {
+        if(NULL!=aesd_device.circ_buff.entry[i].buffptr &&
+            aesd_device.buff_entry.buffptr!=aesd_device.circ_buff.entry[i].buffptr) {
             kfree(&aesd_device.circ_buff.entry[i].buffptr);
             aesd_device.circ_buff.entry[i].buffptr = NULL;
         }
