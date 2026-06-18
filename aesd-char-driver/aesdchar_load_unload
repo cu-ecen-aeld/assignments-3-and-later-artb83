@@ -2,11 +2,11 @@
 
 case "$1" in
 	start)
-		echo "Loading scull module" >> /var/log/aesdchar.log
+		echo "Loading aesdchar module" >> /var/log/aesdchar.log
 		./usr/bin/aesdchar_load >> /var/log/aesdchar.log 2>&1
 		;;
 	stop)
-		echo "Unloading scull module" >> /var/log/aesdchar.log
+		echo "Unloading aesdchar module" >> /var/log/aesdchar.log
 		./usr/bin/aesdchar_unload >> /var/log/aesdchar.log 2>&1
 		;;
 	*)
