@@ -111,18 +111,25 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
     if (!new_buff) {
         goto error;
     }
+    PDEBUG("aesd module write - kmalloc new buff ptr=%px", new_buff);
+
     //Copy data (if exists) from buffer entry into new allocated buffer.
     if(dev->buff_entry.buffptr) {
         memcpy(new_buff, dev->buff_entry.buffptr, buff_entry_curr_size);
+        PDEBUG("aesd module write - Copy and kfree previous buff entry str=%s, ptr=%px", dev->buff_entry.buffptr, dev->buff_entry.buffptr);
+        kfree(dev->buff_entry.buffptr);
+        dev->buff_entry.buffptr = NULL;
     }
 
-    //Assign new allocated buffer to circular buffer entry and update buffer entry size.
     //Copy/concatenate data from user space buffer (buf) into new kernel space buffer.
-    dev->buff_entry.buffptr = new_buff;
-    if( (retval=copy_from_user(new_buff+buff_entry_curr_size, buf, count) )) {
+    //Assign new allocated buffer to circular buffer entry and update buffer entry size.
+    if( copy_from_user(new_buff+buff_entry_curr_size, buf, count) ) {
         retval = -EFAULT;
+        kfree(new_buff);
         goto error;
     }
+    dev->buff_entry.buffptr = new_buff;
+    PDEBUG("aesd module write - New buff entry str=%s, ptr=%px", dev->buff_entry.buffptr, dev->buff_entry.buffptr);
     retval = count;
     buff_entry_curr_size+= count;
     dev->buff_entry.size = buff_entry_curr_size;
@@ -133,8 +140,10 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
     //If terminated command (with '\n') detected, add entry to the circ-buffer, reset buffer entry size to 0.
     if(dev->buff_entry.buffptr[buff_entry_curr_size-1]=='\n') {
         const char* old_buff = aesd_circular_buffer_add_entry(&dev->circ_buff, &dev->buff_entry);
+        PDEBUG("aesd module write - kfree old buff value=%s, ptr=%px", old_buff, old_buff);
         kfree(old_buff);
         dev->buff_entry.size = 0;
+        dev->buff_entry.buffptr = NULL;
     }
 error:
     mutex_unlock(&dev->lock);
@@ -202,17 +211,21 @@ void aesd_cleanup_module(void)
      * TODO: cleanup AESD specific poritions here as necessary
      */
 
-    PDEBUG("aesd module clean-up be - before kfree");
+    PDEBUG("aesd module clean-up buffer entry - before kfree %px", aesd_device.buff_entry.buffptr);
     kfree(aesd_device.buff_entry.buffptr);
-    PDEBUG("aesd module clean-up be - after kfree");
-    for (ssize_t i=0; i<AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED; i++) {
-        PDEBUG("aesd module clean-up - free circ buffer entry %zu size=%zu bytes", i, aesd_device.circ_buff.entry[i].size);
-        PDEBUG("aesd module clean-up - free circ buffer entry ptr=%px", aesd_device.circ_buff.entry[i].buffptr);
-        if(NULL!=aesd_device.circ_buff.entry[i].buffptr &&
-            aesd_device.buff_entry.buffptr!=aesd_device.circ_buff.entry[i].buffptr) {
-            kfree(&aesd_device.circ_buff.entry[i].buffptr);
-            aesd_device.circ_buff.entry[i].buffptr = NULL;
-        }
+    aesd_device.buff_entry.size = 0;
+    PDEBUG("aesd module clean-up buffer entry - after kfree %px", aesd_device.buff_entry.buffptr);
+    struct aesd_buffer_entry* buffer_entry = NULL;
+    ssize_t i = 0;
+    AESD_CIRCULAR_BUFFER_FOREACH(buffer_entry, &aesd_device.circ_buff, i){
+    //for (ssize_t i=0; i<AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED; i++) {
+        PDEBUG("aesd module clean-up - looping in kfree loop");
+        // PDEBUG("aesd module clean-up - kfree circ buffer entry %zu size=%zu bytes", i, aesd_device.circ_buff.entry[i].size);
+        // PDEBUG("aesd module clean-up - kfree circ buffer entry ptr=%px", aesd_device.circ_buff.entry[i].buffptr);
+        // PDEBUG("aesd module clean-up - kfree circ buffer entry %zu size=%zu bytes", i, aesd_device.circ_buff.entry[i].size);
+        PDEBUG("aesd module clean-up - kfree circ buffer entry ptr=%px", buffer_entry->buffptr);
+        kfree(buffer_entry->buffptr);
+        // kfree(&aesd_device.circ_buff.entry[i].buffptr);
     }
     PDEBUG("aesd module clean-up - before mutex destroy");
     mutex_destroy(&aesd_device.lock);
