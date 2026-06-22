@@ -78,10 +78,6 @@ ssize_t aesd_read(struct file *filp, char __user *buf, size_t count,
     if(be_ptr) {
         size_t read_chars = be_ptr->size-cur_buff_entry_fpos;
         read_chars = (read_chars>count ? count : read_chars);
-        // PDEBUG("aesd module read %d bytes to read", read_chars);
-        // PDEBUG("aesd module read position to read from cur_buff_entry_fpos=%zu", cur_buff_entry_fpos);
-        // PDEBUG("aesd module read -> %s from buffptr directly", be_ptr->buffptr);
-        // PDEBUG("aesd module read -> %s from buffptr+cur_buff_entry_fpos", be_ptr->buffptr+cur_buff_entry_fpos);
         if( copy_to_user(buf, be_ptr->buffptr+cur_buff_entry_fpos, read_chars) ) {
             retval=-EFAULT;
             goto error;
@@ -129,18 +125,13 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
         goto error;
     }
     dev->buff_entry.buffptr = new_buff;
-    PDEBUG("aesd module write - New buff entry str=%s, ptr=%px", dev->buff_entry.buffptr, dev->buff_entry.buffptr);
     retval = count;
     buff_entry_curr_size+= count;
     dev->buff_entry.size = buff_entry_curr_size;
-    // PDEBUG("aesd module write copied from user %zu bytes",count);
-    // PDEBUG("aesd module write copied string=%s of %zu bytes", dev->buff_entry.buffptr, count);
-    // PDEBUG("aesd module write new buffer entry size=%zu bytes", dev->buff_entry.size);
 
     //If terminated command (with '\n') detected, add entry to the circ-buffer, reset buffer entry size to 0.
     if(dev->buff_entry.buffptr[buff_entry_curr_size-1]=='\n') {
         const char* old_buff = aesd_circular_buffer_add_entry(&dev->circ_buff, &dev->buff_entry);
-        PDEBUG("aesd module write - kfree old buff value=%s, ptr=%px", old_buff, old_buff);
         kfree(old_buff);
         dev->buff_entry.size = 0;
         dev->buff_entry.buffptr = NULL;
@@ -184,14 +175,11 @@ int aesd_init_module(void)
         return result;
     }
     memset(&aesd_device,0,sizeof(struct aesd_dev));
-
     /**
      * TODO: initialize the AESD specific portion of the device
      */
     mutex_init(&aesd_device.lock);
-
     result = aesd_setup_cdev(&aesd_device);
-
     if( result ) {
         unregister_chrdev_region(dev, 1);
     }
@@ -210,26 +198,14 @@ void aesd_cleanup_module(void)
     /**
      * TODO: cleanup AESD specific poritions here as necessary
      */
-
-    PDEBUG("aesd module clean-up buffer entry - before kfree %px", aesd_device.buff_entry.buffptr);
     kfree(aesd_device.buff_entry.buffptr);
     aesd_device.buff_entry.size = 0;
-    PDEBUG("aesd module clean-up buffer entry - after kfree %px", aesd_device.buff_entry.buffptr);
     struct aesd_buffer_entry* buffer_entry = NULL;
     ssize_t i = 0;
     AESD_CIRCULAR_BUFFER_FOREACH(buffer_entry, &aesd_device.circ_buff, i){
-    //for (ssize_t i=0; i<AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED; i++) {
-        PDEBUG("aesd module clean-up - looping in kfree loop");
-        // PDEBUG("aesd module clean-up - kfree circ buffer entry %zu size=%zu bytes", i, aesd_device.circ_buff.entry[i].size);
-        // PDEBUG("aesd module clean-up - kfree circ buffer entry ptr=%px", aesd_device.circ_buff.entry[i].buffptr);
-        // PDEBUG("aesd module clean-up - kfree circ buffer entry %zu size=%zu bytes", i, aesd_device.circ_buff.entry[i].size);
-        PDEBUG("aesd module clean-up - kfree circ buffer entry ptr=%px", buffer_entry->buffptr);
         kfree(buffer_entry->buffptr);
-        // kfree(&aesd_device.circ_buff.entry[i].buffptr);
     }
-    PDEBUG("aesd module clean-up - before mutex destroy");
     mutex_destroy(&aesd_device.lock);
-    PDEBUG("aesd module clean-up - after mutex destroy");
     unregister_chrdev_region(devno, 1);
     PDEBUG("aesd module clean-up - COMPLETE");
 }
