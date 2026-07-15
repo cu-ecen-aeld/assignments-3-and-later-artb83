@@ -13,7 +13,9 @@
 #include <linux/fs.h>
 #include <sys/poll.h>
 #include <time.h> //for timestamps
+#include <sys/ioctl.h>
 #include "aesdsocket.h"
+#include "aesd_ioctl.h"
 
 #include <linux/limits.h>
 

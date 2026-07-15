@@ -29,6 +29,7 @@
 #endif
 
 #include "aesdchar.h"
+#include "aesd_ioctl.h"
 
 int aesd_major =   0; // use dynamic major
 int aesd_minor =   0;
@@ -141,10 +142,53 @@ error:
     PDEBUG("aesd module write %zu bytes with offset %lld retval=%zu - COMPLETE",count,*f_pos, retval);
     return retval;
 }
+
+long aesd_ioctl(struct file *filp, unsigned int cmd, unsigned long arg) {
+    int err = 0, tmp;
+    int retval = 0;
+
+    /*
+     * extract the type and number bitfields, and don't decode
+     * wrong cmds: return ENOTTY (inappropriate ioctl) before access_ok()
+     */
+    if (_IOC_TYPE(cmd) != AESD_IOC_MAGIC) return -ENOTTY;
+    if (_IOC_NR(cmd) > AESDCHAR_IOC_MAXNR) return -ENOTTY;
+
+    return  retval;
+}
+
+loff_t aesd_llseek(struct file *filp, loff_t off, int whence)
+{
+    struct aesd_dev *dev = filp->private_data;
+    loff_t newpos;
+
+    switch(whence) {
+        case 0: /* SEEK_SET */
+            newpos = off;
+            break;
+
+        case 1: /* SEEK_CUR */
+            newpos = filp->f_pos + off;
+            break;
+
+        case 2: /* SEEK_END */
+            newpos = dev->size + off;
+            break;
+
+        default: /* can't happen */
+            return -EINVAL;
+    }
+    if (newpos < 0) return -EINVAL;
+    filp->f_pos = newpos;
+    return newpos;
+}
+
 struct file_operations aesd_fops = {
-    .owner =    THIS_MODULE,
-    .read =     aesd_read,
-    .write =    aesd_write,
+    .owner  =   THIS_MODULE,
+    .llseek =   aesd_llseek,
+    .read   =   aesd_read,
+    .write  =   aesd_write,
+    .unlocked_ioctl = aesd_ioctl,
     .open =     aesd_open,
     .release =  aesd_release,
 };

@@ -5,8 +5,10 @@ SRCS ?= aesdsocket.c
 HFILES ?= aesdsocket.h
 CC ?= gcc
 LDFLAGS ?= -lc -lpthread
-CFLAGS ?= -g -Wall -Werror
+INC_DIR ?= -I$(PWD)/../aesd-char-driver
+CFLAGS += -g -Wall -Werror $(INC_DIR)
 OBJS ?= $(SRCS:.c=.o)
+
 
 all: $(TARGET)
 
