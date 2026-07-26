@@ -143,10 +143,24 @@ error:
     return retval;
 }
 
-long aesd_ioctl(struct file *filp, unsigned int cmd, unsigned long arg) {
-    int err = 0, tmp;
-    int retval = 0;
+size_t aesd_adjust_file_offset(struct file *filp, unsigned int write_cmd, unsigned int write_cmd_offset) {
+    struct aesd_dev* dev = filp->private_data;
+    size_t cur_buff_entry_fpos = 0;
 
+    if (write_cmd>AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED) return -EINVAL;
+
+    struct aesd_buffer_entry* be_ptr = aesd_circular_buffer_find_entry_offset_for_fpos(&dev->circ_buff,
+                                                                                    write_cmd_offset,
+                                                                                    &cur_buff_entry_fpos);
+    if (NULL==be_ptr) return -EINVAL;
+
+    filp->f_pos = cur_buff_entry_fpos;
+    return cur_buff_entry_fpos;
+}
+
+long aesd_ioctl(struct file *filp, unsigned int cmd, unsigned long arg) {
+    int retval = 0;
+    struct aesd_dev* dev = filp->private_data;
     /*
      * extract the type and number bitfields, and don't decode
      * wrong cmds: return ENOTTY (inappropriate ioctl) before access_ok()
@@ -154,32 +168,38 @@ long aesd_ioctl(struct file *filp, unsigned int cmd, unsigned long arg) {
     if (_IOC_TYPE(cmd) != AESD_IOC_MAGIC) return -ENOTTY;
     if (_IOC_NR(cmd) > AESDCHAR_IOC_MAXNR) return -ENOTTY;
 
+    switch(cmd) {
+    case AESDCHAR_IOCSEEKTO:
+        struct aesd_seekto seekto;
+        if(mutex_lock_interruptible(&dev->lock))
+            return -ERESTARTSYS;
+        if ( copy_from_user(&seekto, (const void __user*)arg, sizeof(seekto))!=0 ) {
+            retval = -EFAULT;
+        } else {
+            retval = aesd_adjust_file_offset(filp, seekto.write_cmd, seekto.write_cmd_offset);
+        }
+        mutex_unlock(&dev->lock);
+        break;
+    default:
+        return -ENOTTY;
+    }
     return  retval;
 }
 
 loff_t aesd_llseek(struct file *filp, loff_t off, int whence)
 {
     struct aesd_dev *dev = filp->private_data;
-    loff_t newpos;
-
-    switch(whence) {
-        case 0: /* SEEK_SET */
-            newpos = off;
-            break;
-
-        case 1: /* SEEK_CUR */
-            newpos = filp->f_pos + off;
-            break;
-
-        case 2: /* SEEK_END */
-            newpos = dev->size + off;
-            break;
-
-        default: /* can't happen */
-            return -EINVAL;
+    struct aesd_buffer_entry* buffer_entry = NULL;
+    ssize_t i = 0;
+    ssize_t buff_size = 0;
+    loff_t newpos = 0;
+    if(mutex_lock_interruptible(&dev->lock))
+        return -EFAULT;
+    AESD_CIRCULAR_BUFFER_FOREACH(buffer_entry, &dev->circ_buff, i){
+        buff_size+=buffer_entry->size;
     }
-    if (newpos < 0) return -EINVAL;
-    filp->f_pos = newpos;
+    newpos = fixed_size_llseek(filp, off, whence, buff_size);
+    mutex_unlock(&dev->lock);
     return newpos;
 }
 
