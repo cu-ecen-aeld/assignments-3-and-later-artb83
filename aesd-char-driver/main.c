@@ -143,19 +143,23 @@ error:
     return retval;
 }
 
-size_t aesd_adjust_file_offset(struct file *filp, unsigned int write_cmd, unsigned int write_cmd_offset) {
+int aesd_adjust_file_offset(struct file *filp, unsigned int write_cmd, unsigned int write_cmd_offset) {
+
+    if (write_cmd >= AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED) return -EINVAL;
+
     struct aesd_dev* dev = filp->private_data;
-    size_t cur_buff_entry_fpos = 0;
+    struct aesd_buffer_entry be = dev->circ_buff.entry[write_cmd];
+    if (NULL==be.buffptr) return -EINVAL;
 
-    if (write_cmd>AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED) return -EINVAL;
+    if (write_cmd_offset > be.size) return -EINVAL;
 
-    struct aesd_buffer_entry* be_ptr = aesd_circular_buffer_find_entry_offset_for_fpos(&dev->circ_buff,
-                                                                                    write_cmd_offset,
-                                                                                    &cur_buff_entry_fpos);
-    if (NULL==be_ptr) return -EINVAL;
+    size_t write_cmd_start_pos = 0;
+    for (int i=0; i < write_cmd; i++) {
+        write_cmd_start_pos+=dev->circ_buff.entry[i].size + 1;
+    }
 
-    filp->f_pos = cur_buff_entry_fpos;
-    return cur_buff_entry_fpos;
+    filp->f_pos = write_cmd_start_pos + write_cmd_offset;
+    return 0;
 }
 
 long aesd_ioctl(struct file *filp, unsigned int cmd, unsigned long arg) {

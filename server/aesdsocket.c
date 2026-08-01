@@ -115,6 +115,9 @@ void* rcvAndSndThread(void* thrArg) {
 		pthread_mutex_unlock(thrData->mutex);
 		return thrData;
 	}
+	#if USE_AESD_CHAR_DEVICE
+	char* newline=strstr(thrData->dataBuff, "AESDCHAR_IOCSEEKTO");
+	#endif
 	appendToStorage(thrData->storageFd, thrData->dataBuff);
 	ssize_t sent=appendFromStorageToBuffAndSend(&thrData->clientFd, thrData->storageFd, thrData->dataBuff);
 	if(sent==-1) printf("Error %d (%s) when sending data to a client\n", errno, strerror(errno));
