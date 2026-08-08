@@ -33,6 +33,8 @@ int listCount(void){
 }
 
 void closeAll(int sfd, int cfd, int fd, struct pollfd* psrvfd) {
+	writeMsgToSyslog(LOG_USER, LOG_INFO, "aesdsocket exiting");
+	fflush(NULL);
 	closelog();
 	shutdown(sfd, SHUT_RDWR);
 	close(sfd);
@@ -74,30 +76,95 @@ void writeMsgToSyslog(int log_facility, int log_priority, const char* msgToLog) 
 	closelog();
 }
 
+bool isFdOpen(int* fd) {
+	if( fcntl(*fd, F_GETFD) == -1 ) {
+		if( errno == EBADF ) {
+			return false; // The fd is closed/invalid
+		}
+	}
+	return true; // The fd is open
+}
+
 ssize_t appendToStorage(int* fd, char* data) {
-	char* newline=strstr(data, "\n");
-	if( newline!=NULL && 0<(*fd = open(DATA_STORAGE_PATH, O_CREAT|O_APPEND|O_WRONLY, S_IRUSR|S_IWUSR|S_IRGRP|S_IWGRP)) ){
-		data[newline-data+1]='\0';//terminate string after \n character
-		ssize_t res=write(*fd, data, (newline-data+1)*sizeof(char));
-		close(*fd);
+	char* dataId=NULL;
+	ssize_t res = 0;
+	bool isIoctl = false;
+	size_t dataLen = strlen(data);
+#if USE_AESD_CHAR_DEVICE
+	uint32_t cmd = 0;
+	uint32_t off = 0;
+	dataId = strstr(data, "AESDCHAR_IOCSEEKTO");
+	if ( NULL != dataId ) {
+		isIoctl = true;
+		char msg[512] = {'\0'};
+		sprintf(msg,"Found aesdchar_iocseekto command");
+		writeMsgToSyslog(LOG_USER, LOG_INFO, msg);
+
+		//AESDCHAR_IOCSEEKTO:X,Y
+		char* cCmd = strchr(dataId, ':')+1; //next char to ':'->X
+		char* cOff = cCmd+2; //next char to ','->Y
+		cmd = *cCmd - '0';
+		off = *cOff - '0';
+	}
+#endif
+	if( !isFdOpen(fd) ) *fd = open(DATA_STORAGE_PATH, O_CREAT|O_APPEND|O_RDWR, S_IRUSR|S_IWUSR|S_IRGRP|S_IWGRP);
+	if( 0<*fd ) {
+		char msg[128] = {'\0'};
+		if( !isIoctl ){
+			res=write(*fd, data, dataLen*sizeof(char));
+			if( res<0 ) {
+				sprintf(msg, "Append write to aesdchar storage error: %d | Message: %s\n", errno, strerror(errno));
+				writeMsgToSyslog(LOG_USER, LOG_INFO, msg);
+			}
+		}else {
+			sprintf(msg,"AESDCHAR_IOCSEEKTO:%d,%d",cmd,off);
+			writeMsgToSyslog(LOG_USER, LOG_INFO, msg);
+			struct aesd_seekto seekto;
+			seekto.write_cmd = cmd;
+			seekto.write_cmd_offset = off;
+			res = ioctl(*fd, AESDCHAR_IOCSEEKTO, &seekto);
+			if( res<0 ) {
+				sprintf(msg, "Append ioctl to aesdchar storage error: %d | Message: %s\n", errno, strerror(errno));
+				writeMsgToSyslog(LOG_USER, LOG_INFO, msg);
+			}
+		}
+		if( !isIoctl ) close(*fd);
 		return res;
 	}
 	return -1;
 }
+
 ssize_t appendFromStorageToBuffAndSend(int* cfd, int* fd, char* buff) {
-	int nRead = 0;
-	ssize_t res=-1;
-	if( 0<(*fd = open(DATA_STORAGE_PATH, O_RDONLY, S_IRUSR|S_IRGRP)) ){
-		res=0;
+	ssize_t nRead = 0;
+	ssize_t nSent = 0;
+	ssize_t nReadTotal = 0;
+	ssize_t nSentTotal = 0;
+
+	if( !isFdOpen(fd) ) {
+		writeMsgToSyslog(LOG_USER, LOG_INFO, "Reopening storage fd");
+		*fd=open(DATA_STORAGE_PATH, O_RDONLY, S_IRUSR|S_IRGRP);
+	}
+	if( 0<*fd ){
+		char msg[256] = {'\0'};
+		writeMsgToSyslog(LOG_USER, LOG_INFO, "Reading aesdchar storage");
 		while( 0<(nRead = read(*fd, buff, BUFFER_SIZE)) ) {
-			res=send(*cfd, buff, nRead, 0); //MSG_FASTOPEN
+			nSent=send(*cfd, buff, nRead, 0); //MSG_FASTOPEN
+			nReadTotal+=nRead;
+			nSentTotal+=nSent;
+		}
+		if(nRead<0) {
+			sprintf(msg, "Read aesdchar storage error code: %d | Message: %s", errno, strerror(errno));
+			writeMsgToSyslog(LOG_USER, LOG_INFO, msg);
+		}else {
+			sprintf(msg, "Read aesdchar storage data of %ld bytes, sent %ld bytes", nReadTotal, nSentTotal);
+			writeMsgToSyslog(LOG_USER, LOG_INFO, msg);
 		}
 	}
 	shutdown(*cfd, SHUT_RDWR);
 	close(*cfd);
 	*cfd=-1;
 	close(*fd);
-	return res;
+    return ( nRead<0 ? nRead : nSent );
 }
 
 void* rcvAndSndThread(void* thrArg) {
@@ -115,16 +182,14 @@ void* rcvAndSndThread(void* thrArg) {
 		pthread_mutex_unlock(thrData->mutex);
 		return thrData;
 	}
-	#if USE_AESD_CHAR_DEVICE
-	char* newline=strstr(thrData->dataBuff, "AESDCHAR_IOCSEEKTO");
-	#endif
 	appendToStorage(thrData->storageFd, thrData->dataBuff);
-	ssize_t sent=appendFromStorageToBuffAndSend(&thrData->clientFd, thrData->storageFd, thrData->dataBuff);
-	if(sent==-1) printf("Error %d (%s) when sending data to a client\n", errno, strerror(errno));
-	thrData->dataBuff[0]='\0';
+	ssize_t	sent = appendFromStorageToBuffAndSend(&thrData->clientFd, thrData->storageFd, thrData->dataBuff);
+	if(sent<0) printf("Error %d (%s) when sending data to a client\n", errno, strerror(errno));
 	openlog(NULL, 0, LOG_USER);
+	syslog(LOG_INFO, "Sent data to client %s", thrData->dataBuff);
 	syslog(LOG_INFO, "Closed connection from %s", thrData->ip4add);
 	closelog();
+	thrData->dataBuff[0]='\0';
 	thrData->threadComplete = true;
 	pthread_mutex_unlock(thrData->mutex);
 	return thrData;
@@ -202,7 +267,7 @@ int main(int argc, char** argv){
 	struct pollfd* psrvfd=NULL;
 	int srvfd = 0; //server
 	int cfd = 0;   //client
-	int fd=0;      //storage file descriptor for incomming stream message
+	int fd=-1;      //storage file descriptor for incomming stream message
 	memset(&hints, 0, sizeof(hints));
 	hints.ai_family = AF_INET;
 	hints.ai_socktype = SOCK_STREAM;
@@ -210,6 +275,7 @@ int main(int argc, char** argv){
 	//threading
 	pthread_mutex_t mutex;
 	SLIST_INIT(&head);
+	writeMsgToSyslog(LOG_USER, LOG_INFO, "aesdsocket starting");
 	if(0!=getaddrinfo(NULL, "9000", &hints, &servinfo)) {
 		printf("Error %d (%s) when getting addrinfo\n", errno, strerror(errno));
 		exit(EXIT_FAILURE);

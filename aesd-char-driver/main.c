@@ -83,12 +83,13 @@ ssize_t aesd_read(struct file *filp, char __user *buf, size_t count,
             retval=-EFAULT;
             goto error;
         }
+        PDEBUG("aesd module read, read data %s", be_ptr->buffptr+cur_buff_entry_fpos);
         retval = read_chars;
         *f_pos+=read_chars;
     }
 error:
     mutex_unlock(&dev->lock);
-    PDEBUG("aesd module read %zu bytes with offset %lld - COMPLETE", count, *f_pos);
+    PDEBUG("aesd module read, read %zu bytes, new f_pos=%lld - COMPLETE", retval, *f_pos);
     return retval;
 }
 
@@ -129,6 +130,7 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
     retval = count;
     buff_entry_curr_size+= count;
     dev->buff_entry.size = buff_entry_curr_size;
+    *f_pos+=count;
 
     //If terminated command (with '\n') detected, add entry to the circ-buffer, reset buffer entry size to 0.
     if(dev->buff_entry.buffptr[buff_entry_curr_size-1]=='\n') {
@@ -139,12 +141,21 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
     }
 error:
     mutex_unlock(&dev->lock);
-    PDEBUG("aesd module write %zu bytes with offset %lld retval=%zu - COMPLETE",count,*f_pos, retval);
+    PDEBUG("aesd module write %zu bytes, new f_pos %lld, retval=%zu - COMPLETE",count,*f_pos, retval);
     return retval;
 }
 
+/**
+ *Adjust the file offset (f_pos) of @param filp based on the location that specified by
+ *@param write_cmd (the 0-referenced command to locate)
+ * @param write_cmd_offset - the 0-referenced offset into the command
+ * @return 0 on success, negative if error occured:
+ *  -EINVAL if write command or cmd_offset was out of range
+ *  -ERESTARTSYS if mutex couldn't be obtained
+ */
 int aesd_adjust_file_offset(struct file *filp, unsigned int write_cmd, unsigned int write_cmd_offset) {
 
+    PDEBUG("aesd module ioctl seek into cmd=%zu cmd_offset=%zu", write_cmd, write_cmd_offset);
     if (write_cmd >= AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED) return -EINVAL;
 
     struct aesd_dev* dev = filp->private_data;
@@ -152,19 +163,32 @@ int aesd_adjust_file_offset(struct file *filp, unsigned int write_cmd, unsigned 
     if (NULL==be.buffptr) return -EINVAL;
 
     if (write_cmd_offset > be.size) return -EINVAL;
+    bool isBufferFull= dev->circ_buff.full;
+    uint8_t out_offs = dev->circ_buff.out_offs;
+    //If buffer is NOT full, seek new f_pos is relative to cmd-0 until requested @param write_cmd+write_cmd_offset
+    uint8_t from = ( isBufferFull ? out_offs : 0 );
+    uint8_t until = (isBufferFull ?
+                    (out_offs<write_cmd ? write_cmd : write_cmd+AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED)
+                                                    : write_cmd);
+    const char* isBuffFull = (isBufferFull ? "full" : "not full");
+    PDEBUG("aesd module ioctl seek from cmd=%zu until cmd=%zu, buffer is %s", from, until, isBuffFull);
 
     size_t write_cmd_start_pos = 0;
-    for (int i=0; i < write_cmd; i++) {
-        write_cmd_start_pos+=dev->circ_buff.entry[i].size + 1;
+    for ( ; from < until; ) {
+        write_cmd_start_pos+=dev->circ_buff.entry[from % AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED].size;
+        from++;
     }
 
     filp->f_pos = write_cmd_start_pos + write_cmd_offset;
+    PDEBUG("aesd module ioctl seek set file pointer to new f_pos=%zu", filp->f_pos);
     return 0;
 }
 
 long aesd_ioctl(struct file *filp, unsigned int cmd, unsigned long arg) {
     int retval = 0;
     struct aesd_dev* dev = filp->private_data;
+    PDEBUG("aesd module ioctl - begin");
+
     /*
      * extract the type and number bitfields, and don't decode
      * wrong cmds: return ENOTTY (inappropriate ioctl) before access_ok()
@@ -187,6 +211,7 @@ long aesd_ioctl(struct file *filp, unsigned int cmd, unsigned long arg) {
     default:
         return -ENOTTY;
     }
+    PDEBUG("aesd module ioctl retval=%zu - COMPLETE", retval);
     return  retval;
 }
 
@@ -197,6 +222,8 @@ loff_t aesd_llseek(struct file *filp, loff_t off, int whence)
     ssize_t i = 0;
     ssize_t buff_size = 0;
     loff_t newpos = 0;
+    PDEBUG("aesd module llseek - begin");
+
     if(mutex_lock_interruptible(&dev->lock))
         return -EFAULT;
     AESD_CIRCULAR_BUFFER_FOREACH(buffer_entry, &dev->circ_buff, i){
@@ -204,6 +231,8 @@ loff_t aesd_llseek(struct file *filp, loff_t off, int whence)
     }
     newpos = fixed_size_llseek(filp, off, whence, buff_size);
     mutex_unlock(&dev->lock);
+    PDEBUG("aesd module llseek - COMPLETE");
+
     return newpos;
 }
 

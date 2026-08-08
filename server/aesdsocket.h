@@ -52,6 +52,7 @@ void closeAll(int sfd, int cfd, int fd, struct pollfd* psrvfd);
 void releaseThreadResourcesFromList(void);
 static void signalHandler(int numOfSignal);
 void writeMsgToSyslog(int log_facility, int log_priority, const char* msgToLog);
+bool isFdOpen(int* fd);
 ssize_t appendToStorage(int* fd, char* data);
 ssize_t appendFromStorageToBuffAndSend(int* cfd, int* fd, char* buff);
 int daemonize(int srvfd);
