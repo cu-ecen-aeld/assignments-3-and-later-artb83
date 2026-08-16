@@ -96,15 +96,15 @@ error:
 ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
                 loff_t *f_pos) {
     ssize_t retval = -ENOMEM;
-    PDEBUG("aesd module write %zu bytes with offset %lld",count,*f_pos);
+    PDEBUG("aesd module write %zu bytes with offset %lld", count, *f_pos);
     /**
      * TODO: handle write
      */
     //Buffer each command to a single buffer entry, until terminated command detected.
     struct aesd_dev* dev = filp->private_data;
-    size_t buff_entry_curr_size = dev->buff_entry.size;
     if(mutex_lock_interruptible(&dev->lock))
         return -EFAULT;
+    size_t buff_entry_curr_size = dev->buff_entry.size;
     char* new_buff = (char*)kmalloc((count+buff_entry_curr_size)*sizeof(char), GFP_KERNEL);
     if (!new_buff) {
         goto error;
@@ -135,6 +135,7 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
     //If terminated command (with '\n') detected, add entry to the circ-buffer, reset buffer entry size to 0.
     if(dev->buff_entry.buffptr[buff_entry_curr_size-1]=='\n') {
         const char* old_buff = aesd_circular_buffer_add_entry(&dev->circ_buff, &dev->buff_entry);
+        PDEBUG("aesd module write - Added new entry to circ. buffer str=%s, size=%zu, ptr=%px", dev->buff_entry.buffptr, dev->buff_entry.size, dev->buff_entry.buffptr);
         kfree(old_buff);
         dev->buff_entry.size = 0;
         dev->buff_entry.buffptr = NULL;
@@ -158,11 +159,18 @@ int aesd_adjust_file_offset(struct file *filp, unsigned int write_cmd, unsigned 
     PDEBUG("aesd module ioctl seek into cmd=%zu cmd_offset=%zu", write_cmd, write_cmd_offset);
     if (write_cmd >= AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED) return -EINVAL;
 
+    PDEBUG("aesd module ioctl seek into, cmd=%zu is valid", write_cmd);
+
     struct aesd_dev* dev = filp->private_data;
     struct aesd_buffer_entry be = dev->circ_buff.entry[write_cmd];
     if (NULL==be.buffptr) return -EINVAL;
 
+    PDEBUG("aesd module ioctl seek into, cmd=%zu returns valid buffer entry", write_cmd);
+
     if (write_cmd_offset > be.size) return -EINVAL;
+
+    PDEBUG("aesd module ioctl seek into, cmd_offset=%zu is valid", write_cmd_offset);
+
     bool isBufferFull= dev->circ_buff.full;
     uint8_t out_offs = dev->circ_buff.out_offs;
     //If buffer is NOT full, seek new f_pos is relative to cmd-0 until requested @param write_cmd+write_cmd_offset
@@ -211,7 +219,7 @@ long aesd_ioctl(struct file *filp, unsigned int cmd, unsigned long arg) {
     default:
         return -ENOTTY;
     }
-    PDEBUG("aesd module ioctl retval=%zu - COMPLETE", retval);
+    PDEBUG("aesd module ioctl retval=%d - COMPLETE", retval);
     return  retval;
 }
 

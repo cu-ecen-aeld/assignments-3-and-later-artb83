@@ -107,6 +107,10 @@ ssize_t appendToStorage(int* fd, char* data) {
 		off = *cOff - '0';
 	}
 #endif
+	if( NULL==dataId ) {
+		dataId = strstr(data, "\n");
+		if(dataId) dataLen = dataId - data + 1; //Including '\n' in dataLen
+	}
 	if( !isFdOpen(fd) ) *fd = open(DATA_STORAGE_PATH, O_CREAT|O_APPEND|O_RDWR, S_IRUSR|S_IWUSR|S_IRGRP|S_IWGRP);
 	if( 0<*fd ) {
 		char msg[128] = {'\0'};
@@ -141,7 +145,7 @@ ssize_t appendFromStorageToBuffAndSend(int* cfd, int* fd, char* buff) {
 	ssize_t nSentTotal = 0;
 
 	if( !isFdOpen(fd) ) {
-		writeMsgToSyslog(LOG_USER, LOG_INFO, "Reopening storage fd");
+		if(0<*fd) writeMsgToSyslog(LOG_USER, LOG_INFO, "Reopening storage fd");
 		*fd=open(DATA_STORAGE_PATH, O_RDONLY, S_IRUSR|S_IRGRP);
 	}
 	if( 0<*fd ){
@@ -183,13 +187,12 @@ void* rcvAndSndThread(void* thrArg) {
 		return thrData;
 	}
 	appendToStorage(thrData->storageFd, thrData->dataBuff);
+	thrData->dataBuff[0] = '\0';
 	ssize_t	sent = appendFromStorageToBuffAndSend(&thrData->clientFd, thrData->storageFd, thrData->dataBuff);
 	if(sent<0) printf("Error %d (%s) when sending data to a client\n", errno, strerror(errno));
 	openlog(NULL, 0, LOG_USER);
-	syslog(LOG_INFO, "Sent data to client %s", thrData->dataBuff);
 	syslog(LOG_INFO, "Closed connection from %s", thrData->ip4add);
 	closelog();
-	thrData->dataBuff[0]='\0';
 	thrData->threadComplete = true;
 	pthread_mutex_unlock(thrData->mutex);
 	return thrData;
