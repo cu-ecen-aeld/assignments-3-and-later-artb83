@@ -99,12 +99,8 @@ ssize_t appendToStorage(int* fd, char* data) {
 		char msg[512] = {'\0'};
 		sprintf(msg,"Found aesdchar_iocseekto command");
 		writeMsgToSyslog(LOG_USER, LOG_INFO, msg);
-
 		//AESDCHAR_IOCSEEKTO:X,Y
-		char* cCmd = strchr(dataId, ':')+1; //next char to ':'->X
-		char* cOff = cCmd+2; //next char to ','->Y
-		cmd = *cCmd - '0';
-		off = *cOff - '0';
+		sscanf(dataId, "AESDCHAR_IOCSEEKTO:%u,%u", &cmd, &off);
 	}
 #endif
 	if( NULL==dataId ) {
@@ -364,7 +360,7 @@ int main(int argc, char** argv){
 #endif
 		cAddrLen=sizeof(cInfo);
 		cfd = accept(srvfd, (struct sockaddr*)&cInfo, &cAddrLen);
-		if (cfd==EAGAIN) continue;
+		if (cfd < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) continue;
 		if(cfd>0){
 			//allocate and init thread data struct
 			thread_data_t* thd = allocAndInitThreadData(cfd, &fd, &cInfo, &mutex);
