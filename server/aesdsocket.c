@@ -53,7 +53,6 @@ void releaseThreadResourcesFromList(void) {
 	while(nodep != NULL) {
 		nextNodep = nodep->nodes.sle_next;
 		pthread_join(nodep->thrData->threadId, NULL);
-		pthread_mutex_unlock(nodep->thrData->mutex);
 		pthread_mutex_destroy(nodep->thrData->mutex);
 		close(nodep->thrData->clientFd);
 		close(*nodep->thrData->storageFd);
@@ -167,21 +166,42 @@ ssize_t appendFromStorageToBuffAndSend(int* cfd, int* fd, char* buff) {
     return ( nRead<0 ? nRead : nSent );
 }
 
+// Helper function - Receive until '\n', peer close, or buffer full - per assignment requirement.
+// Returns bytes received (buffer is NUL-terminated), or -1 on error.
+static ssize_t recvUntilNewline(int cfd, char* buff, size_t buffSize) {
+	size_t total = 0;
+	while (total < buffSize) {
+		ssize_t n = recv(cfd, buff + total, (buffSize - total)*sizeof(char), 0);
+		if (n < 0) {
+			if (errno == EINTR) continue;   // interrupted by signal, retry
+			return -1;
+		}
+		if (n == 0) break;                  // client closed the connection
+		total += (size_t)n;
+		if (memchr(buff + total - n, '\n', (size_t)n) != NULL) break;
+	}
+	buff[total] = '\0';                     // dataBuff is BUFFER_SIZE+1, so this is safe
+	return (ssize_t)total;
+}
+
 void* rcvAndSndThread(void* thrArg) {
 	thread_data_t* thrData = (thread_data_t*)thrArg;
 	pthread_mutex_lock(thrData->mutex);
 	openlog(NULL, 0, LOG_USER);
 	syslog(LOG_INFO, "Accepted connection from %s", thrData->ip4add);
 	closelog();
-	ssize_t recieved = recv(thrData->clientFd, thrData->dataBuff, BUFFER_SIZE*sizeof(char), 0);//MSG_WAITALL
-	shutdown(thrData->clientFd, SHUT_RD);
-	if (recieved>BUFFER_SIZE) {
+	ssize_t recieved = recvUntilNewline(thrData->clientFd, thrData->dataBuff, BUFFER_SIZE);
+	if (recieved>BUFFER_SIZE || recieved<=0) {
+		if (recieved<0) {
+			syslog(LOG_ERR, "recv error from %s: %s", thrData->ip4add, strerror(errno));
+		}
 		shutdown(thrData->clientFd, SHUT_RDWR);
 		close(thrData->clientFd);
 		thrData->threadComplete = true;
 		pthread_mutex_unlock(thrData->mutex);
 		return thrData;
 	}
+	shutdown(thrData->clientFd, SHUT_RD);
 	appendToStorage(thrData->storageFd, thrData->dataBuff);
 	thrData->dataBuff[0] = '\0';
 	ssize_t	sent = appendFromStorageToBuffAndSend(&thrData->clientFd, thrData->storageFd, thrData->dataBuff);

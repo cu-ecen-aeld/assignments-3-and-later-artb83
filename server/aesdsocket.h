@@ -1,5 +1,5 @@
 //
-// Created by root on 9/17/25.
+// Created by Arthur Brodsky on 9/17/25.
 //
 
 #ifndef SERVER_AESDSOCKET_H
