@@ -19,8 +19,9 @@
 
 #include <linux/limits.h>
 
-static bool caught_sigint=false;
-static bool caught_sigterm=false;
+static volatile sig_atomic_t caught_sigint=false;
+static volatile sig_atomic_t caught_sigterm=false;
+
 static SLIST_HEAD(HEAD_SL, threads_list_node_t) head;
 
 int listCount(void){
@@ -33,7 +34,7 @@ int listCount(void){
 }
 
 void closeAll(int sfd, int cfd, int fd, struct pollfd* psrvfd) {
-	writeMsgToSyslog(LOG_USER, LOG_INFO, "aesdsocket exiting");
+	syslog(LOG_INFO, "aesdsocket exiting");
 	fflush(NULL);
 	closelog();
 	shutdown(sfd, SHUT_RDWR);
@@ -50,12 +51,12 @@ void releaseThreadResourcesFromList(void) {
 	struct threads_list_node_t* nodep=head.slh_first;
 	struct threads_list_node_t* nextNodep=nodep;
 
+	if(nodep) pthread_mutex_destroy(nodep->thrData->mutex);
+
 	while(nodep != NULL) {
 		nextNodep = nodep->nodes.sle_next;
-		pthread_join(nodep->thrData->threadId, NULL);
-		pthread_mutex_destroy(nodep->thrData->mutex);
-		close(nodep->thrData->clientFd);
-		close(*nodep->thrData->storageFd);
+		// close(nodep->thrData->clientFd);
+		// close(*nodep->thrData->storageFd);
 		if (nodep->thrData->dataBuff && nodep->thrData) free(nodep->thrData->dataBuff);
 		if (nodep->thrData) {
 			free(nodep->thrData);
@@ -68,11 +69,6 @@ void releaseThreadResourcesFromList(void) {
 static void signalHandler(int numOfSignal){
 	if( numOfSignal == SIGINT ) caught_sigint = true;
 	if( numOfSignal == SIGTERM ) caught_sigterm = true;
-}
-void writeMsgToSyslog(int log_facility, int log_priority, const char* msgToLog) {
-	openlog(NULL, 0, log_facility);
-	syslog(log_priority, "%s", msgToLog);
-	closelog();
 }
 
 bool isFdOpen(int* fd) {
@@ -95,9 +91,7 @@ ssize_t appendToStorage(int* fd, char* data) {
 	dataId = strstr(data, "AESDCHAR_IOCSEEKTO");
 	if ( NULL != dataId ) {
 		isIoctl = true;
-		char msg[512] = {'\0'};
-		sprintf(msg,"Found aesdchar_iocseekto command");
-		writeMsgToSyslog(LOG_USER, LOG_INFO, msg);
+		syslog(LOG_INFO, "Found aesdchar_iocseekto command");
 		//AESDCHAR_IOCSEEKTO:X,Y
 		sscanf(dataId, "AESDCHAR_IOCSEEKTO:%u,%u", &cmd, &off);
 	}
@@ -108,26 +102,25 @@ ssize_t appendToStorage(int* fd, char* data) {
 	}
 	if( !isFdOpen(fd) ) *fd = open(DATA_STORAGE_PATH, O_CREAT|O_APPEND|O_RDWR, S_IRUSR|S_IWUSR|S_IRGRP|S_IWGRP);
 	if( 0<*fd ) {
-		char msg[128] = {'\0'};
 		if( !isIoctl ){
 			res=write(*fd, data, dataLen*sizeof(char));
 			if( res<0 ) {
-				sprintf(msg, "Append write to aesdchar storage error: %d | Message: %s\n", errno, strerror(errno));
-				writeMsgToSyslog(LOG_USER, LOG_INFO, msg);
+				syslog(LOG_INFO, "Append write to aesdchar storage error: %d | Message: %s\n", errno, strerror(errno));
 			}
 		}else {
-			sprintf(msg,"AESDCHAR_IOCSEEKTO:%d,%d",cmd,off);
-			writeMsgToSyslog(LOG_USER, LOG_INFO, msg);
+			syslog(LOG_INFO, "AESDCHAR_IOCSEEKTO:%d,%d",cmd,off);
 			struct aesd_seekto seekto;
 			seekto.write_cmd = cmd;
 			seekto.write_cmd_offset = off;
 			res = ioctl(*fd, AESDCHAR_IOCSEEKTO, &seekto);
 			if( res<0 ) {
-				sprintf(msg, "Append ioctl to aesdchar storage error: %d | Message: %s\n", errno, strerror(errno));
-				writeMsgToSyslog(LOG_USER, LOG_INFO, msg);
+				syslog(LOG_INFO, "Append ioctl to aesdchar storage error: %d | Message: %s\n", errno, strerror(errno));
 			}
 		}
-		if( !isIoctl ) close(*fd);
+		if( !isIoctl ) {
+			close(*fd);
+			*fd = -1;
+		}
 		return res;
 	}
 	return -1;
@@ -140,29 +133,27 @@ ssize_t appendFromStorageToBuffAndSend(int* cfd, int* fd, char* buff) {
 	ssize_t nSentTotal = 0;
 
 	if( !isFdOpen(fd) ) {
-		if(0<*fd) writeMsgToSyslog(LOG_USER, LOG_INFO, "Reopening storage fd");
+		if(0<*fd) syslog(LOG_INFO, "Reopening storage fd");
 		*fd=open(DATA_STORAGE_PATH, O_RDONLY, S_IRUSR|S_IRGRP);
 	}
 	if( 0<*fd ){
-		char msg[256] = {'\0'};
-		writeMsgToSyslog(LOG_USER, LOG_INFO, "Reading aesdchar storage");
+		syslog(LOG_INFO, "Reading aesdchar storage");
 		while( 0<(nRead = read(*fd, buff, BUFFER_SIZE)) ) {
 			nSent=send(*cfd, buff, nRead, 0); //MSG_FASTOPEN
 			nReadTotal+=nRead;
 			nSentTotal+=nSent;
 		}
 		if(nRead<0) {
-			sprintf(msg, "Read aesdchar storage error code: %d | Message: %s", errno, strerror(errno));
-			writeMsgToSyslog(LOG_USER, LOG_INFO, msg);
+			syslog(LOG_INFO, "Read aesdchar storage error code: %d | Message: %s", errno, strerror(errno));
 		}else {
-			sprintf(msg, "Read aesdchar storage data of %ld bytes, sent %ld bytes", nReadTotal, nSentTotal);
-			writeMsgToSyslog(LOG_USER, LOG_INFO, msg);
+			syslog(LOG_INFO, "Read aesdchar storage data of %ld bytes, sent %ld bytes", nReadTotal, nSentTotal);
 		}
 	}
 	shutdown(*cfd, SHUT_RDWR);
 	close(*cfd);
 	*cfd=-1;
 	close(*fd);
+	*fd = -1;
     return ( nRead<0 ? nRead : nSent );
 }
 
@@ -186,31 +177,27 @@ static ssize_t recvUntilNewline(int cfd, char* buff, size_t buffSize) {
 
 void* rcvAndSndThread(void* thrArg) {
 	thread_data_t* thrData = (thread_data_t*)thrArg;
-	pthread_mutex_lock(thrData->mutex);
-	openlog(NULL, 0, LOG_USER);
 	syslog(LOG_INFO, "Accepted connection from %s", thrData->ip4add);
-	closelog();
 	ssize_t recieved = recvUntilNewline(thrData->clientFd, thrData->dataBuff, BUFFER_SIZE);
-	if (recieved>BUFFER_SIZE || recieved<=0) {
+	if(recieved<=0) {
 		if (recieved<0) {
 			syslog(LOG_ERR, "recv error from %s: %s", thrData->ip4add, strerror(errno));
 		}
 		shutdown(thrData->clientFd, SHUT_RDWR);
 		close(thrData->clientFd);
 		thrData->threadComplete = true;
-		pthread_mutex_unlock(thrData->mutex);
 		return thrData;
 	}
 	shutdown(thrData->clientFd, SHUT_RD);
+	pthread_mutex_lock(thrData->mutex);
 	appendToStorage(thrData->storageFd, thrData->dataBuff);
 	thrData->dataBuff[0] = '\0';
 	ssize_t	sent = appendFromStorageToBuffAndSend(&thrData->clientFd, thrData->storageFd, thrData->dataBuff);
-	if(sent<0) printf("Error %d (%s) when sending data to a client\n", errno, strerror(errno));
-	openlog(NULL, 0, LOG_USER);
-	syslog(LOG_INFO, "Closed connection from %s", thrData->ip4add);
-	closelog();
-	thrData->threadComplete = true;
 	pthread_mutex_unlock(thrData->mutex);
+
+	if(sent<0) printf("Error %d (%s) when sending data to a client\n", errno, strerror(errno));
+	syslog(LOG_INFO, "Closed connection from %s", thrData->ip4add);
+	thrData->threadComplete = true;
 	return thrData;
 }
 
@@ -235,7 +222,8 @@ thread_data_t* allocAndInitThreadData(int clientFd, int* storageFd, struct socka
 }
 
 int daemonize(int srvfd){
-	writeMsgToSyslog(LOG_USER, LOG_INFO, "Turning into a daemon");
+	syslog(LOG_INFO, "Turning into a daemon");
+	closelog();
 	pid_t pid = fork();
 	if(pid<0) {
 		exit(EXIT_FAILURE);
@@ -259,6 +247,9 @@ int daemonize(int srvfd){
 	open("/dev/null", O_RDWR);
 	dup(0);
 	dup(0);
+
+	openlog("aesdsocket", LOG_PID, LOG_USER);   // reopen: gets a fresh, valid fd
+	syslog(LOG_INFO, "Daemon started");
 	return 0;
 }
 
@@ -294,7 +285,8 @@ int main(int argc, char** argv){
 	//threading
 	pthread_mutex_t mutex;
 	SLIST_INIT(&head);
-	writeMsgToSyslog(LOG_USER, LOG_INFO, "aesdsocket starting");
+	openlog("aesdsocket", LOG_PID, LOG_USER); //Open syslog for writing
+	syslog(LOG_INFO, "aesdsocket starting");
 	if(0!=getaddrinfo(NULL, "9000", &hints, &servinfo)) {
 		printf("Error %d (%s) when getting addrinfo\n", errno, strerror(errno));
 		exit(EXIT_FAILURE);
@@ -352,7 +344,7 @@ int main(int argc, char** argv){
 	//running the server
 	while(bRun) {
 		if(caught_sigint || caught_sigterm) {
-			writeMsgToSyslog(LOG_USER, LOG_INFO, "Caught signal, exiting");
+			syslog(LOG_INFO, "Caught signal, exiting");
 			closeAll(srvfd, cfd, fd, psrvfd);
 			bRun=false;
 			printf("\nCaught signal, exiting\n");
@@ -396,10 +388,10 @@ int main(int argc, char** argv){
 		SLIST_FOREACH_SAFE(nodep, &head, nodes, nodep->nodes.sle_next) {
 			if (nodep->thrData->dataBuff!=NULL && nodep->thrData->threadComplete) {
 				pthread_join(nodep->thrData->threadId, NULL);
-				if(nodep->thrData->dataBuff) {
-					free(nodep->thrData->dataBuff);
-					nodep->thrData->dataBuff=NULL;
-				}
+				SLIST_REMOVE(&head, nodep, threads_list_node_t, nodes);
+				free(nodep->thrData->dataBuff);
+				free(nodep->thrData);
+				free(nodep);
 			}
 		}
 	}
