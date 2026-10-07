@@ -18,6 +18,7 @@
 #include <pthread.h>
 #include <stdbool.h>
 #include <sys/types.h>
+#include <stdatomic.h>
 #include "queue.h"
 
 
@@ -32,7 +33,7 @@ typedef struct {
     pthread_mutex_t* mutex;
  	char ip4add[INET_ADDRSTRLEN]; //ipv4
     struct sockaddr_in* cInfo;
-    bool threadComplete;
+    atomic_bool threadComplete;
 }thread_data_t;
 
 typedef struct {
@@ -48,7 +49,7 @@ struct threads_list_node_t{
 };
 
 
-void closeAll(int sfd, int cfd, int fd, struct pollfd* psrvfd);
+void closeAll(int sfd, int cfd, int fd, struct pollfd* psrvfd, pthread_mutex_t* mutex);
 void releaseThreadResourcesFromList(void);
 static void signalHandler(int numOfSignal);
 bool isFdOpen(int* fd);

@@ -33,37 +33,31 @@ int listCount(void){
 	return nEntries;
 }
 
-void closeAll(int sfd, int cfd, int fd, struct pollfd* psrvfd) {
+void closeAll(int sfd, int cfd, int fd, struct pollfd* psrvfd, pthread_mutex_t* mutex) {
 	syslog(LOG_INFO, "aesdsocket exiting");
-	fflush(NULL);
-	closelog();
 	shutdown(sfd, SHUT_RDWR);
 	close(sfd);
-	close(cfd);
-	close(fd);
-	remove("/var/tmp/aesdsocketdata");
+	releaseThreadResourcesFromList();
+	pthread_mutex_destroy(mutex);
 	if(psrvfd!=NULL) free(psrvfd);
-	if(!SLIST_EMPTY(&head)) releaseThreadResourcesFromList();
+#if !USE_AESD_CHAR_DEVICE
+	remove(DATA_STORAGE_PATH);
+#endif
+	closelog();
+
 }
 
 //Very inefficient because of single linked list
 void releaseThreadResourcesFromList(void) {
-	struct threads_list_node_t* nodep=head.slh_first;
-	struct threads_list_node_t* nextNodep=nodep;
-
-	if(nodep) pthread_mutex_destroy(nodep->thrData->mutex);
-
-	while(nodep != NULL) {
-		nextNodep = nodep->nodes.sle_next;
-		// close(nodep->thrData->clientFd);
-		// close(*nodep->thrData->storageFd);
-		if (nodep->thrData->dataBuff && nodep->thrData) free(nodep->thrData->dataBuff);
-		if (nodep->thrData) {
-			free(nodep->thrData);
-			nodep->thrData = NULL;
-		}
+	struct threads_list_node_t *nodep, *tmp;
+	SLIST_FOREACH_SAFE(nodep, &head, nodes, tmp) {
+		if (!atomic_load(&nodep->thrData->threadComplete))
+			shutdown(nodep->thrData->clientFd, SHUT_RDWR);   // unblock a thread stuck in recv()
+		pthread_join(nodep->thrData->threadId, NULL);
+		SLIST_REMOVE(&head, nodep, threads_list_node_t, nodes);
+		free(nodep->thrData->dataBuff);
+		free(nodep->thrData);
 		free(nodep);
-		nodep=nextNodep;
 	}
 }
 static void signalHandler(int numOfSignal){
@@ -185,7 +179,7 @@ void* rcvAndSndThread(void* thrArg) {
 		}
 		shutdown(thrData->clientFd, SHUT_RDWR);
 		close(thrData->clientFd);
-		thrData->threadComplete = true;
+		atomic_store(&thrData->threadComplete, true);
 		return thrData;
 	}
 	shutdown(thrData->clientFd, SHUT_RD);
@@ -197,22 +191,22 @@ void* rcvAndSndThread(void* thrArg) {
 
 	if(sent<0) printf("Error %d (%s) when sending data to a client\n", errno, strerror(errno));
 	syslog(LOG_INFO, "Closed connection from %s", thrData->ip4add);
-	thrData->threadComplete = true;
+	atomic_store(&thrData->threadComplete, true);
 	return thrData;
 }
 
 thread_data_t* allocAndInitThreadData(int clientFd, int* storageFd, struct sockaddr_in* cInfo, pthread_mutex_t* mutex) {
 	//init thread data struct
 	//allocate thread data struct
-	thread_data_t* thd = (thread_data_t*)calloc(1, sizeof(thread_data_t));
+	thread_data_t* thd = calloc(1, sizeof(*thd));
 	if (thd!=NULL) {
 		thd->clientFd=clientFd;
 		thd->storageFd=storageFd;
 		thd->mutex=mutex;
-		thd->threadComplete=false;
+		atomic_store(&thd->threadComplete, false);
 		inet_ntop(AF_INET, &cInfo->sin_addr, thd->ip4add, INET_ADDRSTRLEN);
 		// allocate data buffer
-		thd->dataBuff=(char*)malloc((1+BUFFER_SIZE)*sizeof(char));
+		thd->dataBuff=malloc((1+BUFFER_SIZE)*sizeof(*thd->dataBuff));
 		if (thd->dataBuff==NULL) {
 			free(thd);
 			return NULL;
@@ -291,7 +285,7 @@ int main(int argc, char** argv){
 		printf("Error %d (%s) when getting addrinfo\n", errno, strerror(errno));
 		exit(EXIT_FAILURE);
 	}
-	psrvfd=(struct pollfd*)calloc(1, sizeof(struct pollfd));
+	psrvfd=calloc(1, sizeof(*psrvfd));
 	if(psrvfd==NULL) {
 		printf("Error %d (%s) when creating struct pollfd*\n", errno, strerror(errno));
 		exit(EXIT_FAILURE);
@@ -316,7 +310,7 @@ int main(int argc, char** argv){
 	}
 
 	if(!bRun) { //if any errors, close all and exit
-		closeAll(srvfd, cfd, fd, psrvfd);
+		closeAll(srvfd, cfd, fd, psrvfd, &mutex);
 		exit(EXIT_FAILURE);
 	} else {    //else subscribe to signals, listen for incoming connections and signals, continue running.
 		if(bDaemon) bRun = (daemonize(srvfd) == 0 ? true : false);
@@ -345,7 +339,7 @@ int main(int argc, char** argv){
 	while(bRun) {
 		if(caught_sigint || caught_sigterm) {
 			syslog(LOG_INFO, "Caught signal, exiting");
-			closeAll(srvfd, cfd, fd, psrvfd);
+			closeAll(srvfd, cfd, fd, psrvfd, &mutex);
 			bRun=false;
 			printf("\nCaught signal, exiting\n");
 			exit(EXIT_SUCCESS);
@@ -373,20 +367,35 @@ int main(int argc, char** argv){
 		cAddrLen=sizeof(cInfo);
 		cfd = accept(srvfd, (struct sockaddr*)&cInfo, &cAddrLen);
 		if (cfd < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) continue;
-		if(cfd>0){
+		if(cfd>=0){
 			//allocate and init thread data struct
 			thread_data_t* thd = allocAndInitThreadData(cfd, &fd, &cInfo, &mutex);
-			//allocate threads list node - each new node represents a new thread
-			struct threads_list_node_t* node = (struct threads_list_node_t*)calloc(1, sizeof(struct threads_list_node_t));
+			//allocate threads list node - each new node represents a new worker thread
+			struct threads_list_node_t* node = thd ? calloc(1, sizeof(*node)) : NULL;
+			if (!node || !thd) {
+				syslog(LOG_ERR, "Out of memory, dropping connection");
+				close(cfd);
+				if(thd) {
+					free(thd->dataBuff);
+					free(thd);
+				}
+				continue;
+			}
 			//init node
 			node->thrData=thd;
-			//insert node into the list
+			if (pthread_create(&thd->threadId, NULL, rcvAndSndThread, thd) != 0) {
+				syslog(LOG_ERR, "pthread_create failed");
+				close(cfd);
+				free(thd->dataBuff); free(thd); free(node);
+				continue;
+			}
+			// insert only after the thread exists
 			SLIST_INSERT_HEAD(&head, node, nodes);
-			pthread_create(&thd->threadId, NULL, rcvAndSndThread, thd);
 		}
 		struct threads_list_node_t* nodep=NULL;
-		SLIST_FOREACH_SAFE(nodep, &head, nodes, nodep->nodes.sle_next) {
-			if (nodep->thrData->dataBuff!=NULL && nodep->thrData->threadComplete) {
+		struct threads_list_node_t* tmp=NULL;
+		SLIST_FOREACH_SAFE(nodep, &head, nodes, tmp) {
+			if (atomic_load(&nodep->thrData->threadComplete)) {
 				pthread_join(nodep->thrData->threadId, NULL);
 				SLIST_REMOVE(&head, nodep, threads_list_node_t, nodes);
 				free(nodep->thrData->dataBuff);
@@ -395,6 +404,6 @@ int main(int argc, char** argv){
 			}
 		}
 	}
-	closeAll(srvfd, cfd, fd, psrvfd);
+	closeAll(srvfd, cfd, fd, psrvfd, &mutex);
 	return rv;
 }
