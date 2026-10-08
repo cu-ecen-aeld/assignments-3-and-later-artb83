@@ -6,7 +6,7 @@ HFILES ?= aesdsocket.h
 CC ?= gcc
 LDFLAGS ?= -lc -lpthread
 INC_DIR ?= -I$(PWD)/../aesd-char-driver
-CFLAGS += -g -Wall -Werror $(INC_DIR)
+CFLAGS += -g -Wall -Werror -Wextra $(INC_DIR)
 OBJS ?= $(SRCS:.c=.o)
 
 

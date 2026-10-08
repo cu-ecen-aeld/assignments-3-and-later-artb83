@@ -11,7 +11,7 @@
 #include <arpa/inet.h> // for inet_ntop
 #include <fcntl.h>
 #include <linux/fs.h>
-#include <sys/poll.h>
+#include <poll.h>
 #include <time.h> //for timestamps
 #include <sys/ioctl.h>
 #include "aesdsocket.h"
@@ -192,9 +192,9 @@ static ssize_t recvUntilNewline(int cfd, char* buff, size_t buffSize) {
 void* rcvAndSndThread(void* thrArg) {
 	thread_data_t* thrData = (thread_data_t*)thrArg;
 	syslog(LOG_INFO, "Accepted connection from %s", thrData->ip4add);
-	ssize_t recieved = recvUntilNewline(thrData->clientFd, thrData->dataBuff, BUFFER_SIZE);
-	if(recieved<=0) {
-		if (recieved<0) {
+	ssize_t received = recvUntilNewline(thrData->clientFd, thrData->dataBuff, BUFFER_SIZE);
+	if(received<=0) {
+		if (received<0) {
 			syslog(LOG_ERR, "recv error from %s: %s", thrData->ip4add, strerror(errno));
 		}
 		shutdown(thrData->clientFd, SHUT_RDWR);
@@ -245,8 +245,9 @@ int daemonize(int srvfd){
 	}
 
 	if (setsid() ==-1) { //create new session and proc group
+		int err = errno;
 		openlog("aesdsocket", LOG_PID, LOG_USER);
-		syslog(LOG_ERR, "setsid failed: %s", strerror(errno));
+		syslog(LOG_ERR, "setsid failed: %s", strerror(err));
 		return -1;
 	}
 
@@ -255,7 +256,7 @@ int daemonize(int srvfd){
 	if (pid>0) exit(EXIT_SUCCESS); //exit parent proc
 	//continue with child proc, daemon
 	umask(0);
-	chdir("/");
+	if(chdir("/") != 0) return -1;
 	for (int i=0; i<INR_OPEN_MAX; i++) {
 		if (i==srvfd) continue; //inherit server socket descriptor
 		close(i); //closing file descriptors, including stdin/out/err
@@ -276,11 +277,9 @@ int sigsubscribe(void* handler) {
 	memset(&new_action, 0, sizeof(struct sigaction));
 	new_action.sa_handler = handler;
 	if( sigaction(SIGINT, &new_action, NULL) !=0 ) {
-		printf("Error %d (%s) registering for SIGINT", errno, strerror(errno));
 		return -1;
 	}
 	if( sigaction(SIGTERM, &new_action, NULL) !=0 ) {
-		printf("Error %d (%s) registering for SIGTERM", errno, strerror(errno));
 		return  -1;
 	}
 	return 0;

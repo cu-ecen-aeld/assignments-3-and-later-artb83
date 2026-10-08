@@ -20,7 +20,8 @@
 #include <sys/types.h>
 #include <stdatomic.h>
 #include "queue.h"
-
+#include <netinet/in.h>
+#include <poll.h>
 
 #define HEAD_SL head_sl
 #define POLL_TIMEOUT_MSEC 100
