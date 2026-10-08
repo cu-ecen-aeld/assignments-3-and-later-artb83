@@ -33,7 +33,7 @@ int listCount(void){
 	return nEntries;
 }
 
-void closeAll(int sfd, int cfd, int fd, struct pollfd* psrvfd, pthread_mutex_t* mutex) {
+void closeAll(int sfd, struct pollfd* psrvfd, pthread_mutex_t* mutex) {
 	syslog(LOG_INFO, "aesdsocket exiting");
 	shutdown(sfd, SHUT_RDWR);
 	close(sfd);							//Stop accepting
@@ -46,7 +46,7 @@ void closeAll(int sfd, int cfd, int fd, struct pollfd* psrvfd, pthread_mutex_t* 
 	closelog();        //Close syslog
 }
 
-//Unblock + join all worker threads, free linked list pointers
+//Unblock + join worker threads, free linked list pointers
 void releaseThreadResourcesFromList(void) {
 	struct threads_list_node_t *nodep, *tmp;
 	SLIST_FOREACH_SAFE(nodep, &head, nodes, tmp) {
@@ -59,6 +59,7 @@ void releaseThreadResourcesFromList(void) {
 		free(nodep);
 	}
 }
+
 static void signalHandler(int numOfSignal){
 	if( numOfSignal == SIGINT ) caught_sigint = true;
 	if( numOfSignal == SIGTERM ) caught_sigterm = true;
@@ -204,11 +205,10 @@ void* rcvAndSndThread(void* thrArg) {
 	shutdown(thrData->clientFd, SHUT_RD);
 	pthread_mutex_lock(thrData->mutex);
 	appendToStorage(thrData->storageFd, thrData->dataBuff);
-	thrData->dataBuff[0] = '\0';
 	ssize_t	sent = appendFromStorageToBuffAndSend(&thrData->clientFd, thrData->storageFd, thrData->dataBuff);
 	pthread_mutex_unlock(thrData->mutex);
 
-	if(sent<0) printf("Error %d (%s) when sending data to a client\n", errno, strerror(errno));
+	if(sent<0) syslog(LOG_ERR, "Error %d (%s) when sending data to a client", errno, strerror(errno));
 	syslog(LOG_INFO, "Closed connection from %s", thrData->ip4add);
 	atomic_store(&thrData->threadComplete, true);
 	return thrData;
@@ -244,7 +244,11 @@ int daemonize(int srvfd){
 		exit(EXIT_SUCCESS);//exit parent proc
 	}
 
-	if (setsid() ==-1) return -1; //create new session and proc group
+	if (setsid() ==-1) { //create new session and proc group
+		openlog("aesdsocket", LOG_PID, LOG_USER);
+		syslog(LOG_ERR, "setsid failed: %s", strerror(errno));
+		return -1;
+	}
 
 	pid = fork();
 	if (pid<0) exit(EXIT_FAILURE);
@@ -329,11 +333,14 @@ int main(int argc, char** argv){
 	}
 
 	if(!bRun) { //if any errors, close all and exit
-		closeAll(srvfd, cfd, fd, psrvfd, &mutex);
+		closeAll(srvfd, psrvfd, &mutex);
 		exit(EXIT_FAILURE);
-	} else {    //else subscribe to signals, listen for incoming connections and signals, continue running.
-		if(bDaemon) bRun = (daemonize(srvfd) == 0 ? true : false);
-		bRun = (0==sigsubscribe(signalHandler) ? true : false);
+	} else {    //else daemonize, subscribe to signals, listen for incoming connections and signals, continue running.
+		if(bDaemon && daemonize(srvfd) != 0) exit(EXIT_FAILURE);
+		if(sigsubscribe(signalHandler) != 0) {
+			syslog(LOG_ERR, "Signal registration failed: %s", strerror(errno));
+			exit(EXIT_FAILURE);
+		}
 	}
 
 
@@ -365,7 +372,7 @@ int main(int argc, char** argv){
 	while(bRun) {
 		if(caught_sigint || caught_sigterm) {
 			syslog(LOG_INFO, "Caught signal, exiting");
-			closeAll(srvfd, cfd, fd, psrvfd, &mutex);
+			closeAll(srvfd, psrvfd, &mutex);
 			bRun=false;
 			printf("\nCaught signal, exiting\n");
 			exit(EXIT_SUCCESS);
@@ -437,6 +444,6 @@ int main(int argc, char** argv){
 			}
 		}
 	}
-	closeAll(srvfd, cfd, fd, psrvfd, &mutex);
+	closeAll(srvfd, psrvfd, &mutex);
 	return rv;
 }

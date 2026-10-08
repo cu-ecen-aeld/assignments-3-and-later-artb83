@@ -13,7 +13,7 @@
 #endif
 
 #define LISTEN_BACKLOG 128
-#define BUFFER_SIZE 1024*1024
+#define BUFFER_SIZE (1024*1024)
 
 #include <pthread.h>
 #include <stdbool.h>
@@ -32,16 +32,8 @@ typedef struct {
     pthread_t threadId;
     pthread_mutex_t* mutex;
  	char ip4add[INET_ADDRSTRLEN]; //ipv4
-    struct sockaddr_in* cInfo;
     atomic_bool threadComplete;
 }thread_data_t;
-
-typedef struct {
-    int* storageFd;
-    pthread_t threadId;
-    pthread_mutex_t* mutex;
-    bool threadComplete;
-}timestamp_thread_data_t;
 
 struct threads_list_node_t{
     thread_data_t*       thrData;
@@ -49,9 +41,8 @@ struct threads_list_node_t{
 };
 
 
-void closeAll(int sfd, int cfd, int fd, struct pollfd* psrvfd, pthread_mutex_t* mutex);
+void closeAll(int sfd, struct pollfd* psrvfd, pthread_mutex_t* mutex);
 void releaseThreadResourcesFromList(void);
-static void signalHandler(int numOfSignal);
 bool isFdOpen(int* fd);
 ssize_t appendToStorage(int* fd, char* data);
 ssize_t appendFromStorageToBuffAndSend(int* cfd, int* fd, char* buff);
@@ -60,7 +51,7 @@ int sigsubscribe(void* handler);
 
 //threading
 //init thread data struct
-thread_data_t* allocAndInitThreadData(int clientFd, int* logFd, struct sockaddr_in* cInfo, pthread_mutex_t* mutex);
+thread_data_t* allocAndInitThreadData(int clientFd, int* storageFd, struct sockaddr_in* cInfo, pthread_mutex_t* mutex);
 
 
 #endif //SERVER_AESDSOCKET_H
