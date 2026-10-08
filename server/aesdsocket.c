@@ -36,18 +36,17 @@ int listCount(void){
 void closeAll(int sfd, int cfd, int fd, struct pollfd* psrvfd, pthread_mutex_t* mutex) {
 	syslog(LOG_INFO, "aesdsocket exiting");
 	shutdown(sfd, SHUT_RDWR);
-	close(sfd);
-	releaseThreadResourcesFromList();
-	pthread_mutex_destroy(mutex);
+	close(sfd);							//Stop accepting
+	releaseThreadResourcesFromList();   //Unblock + join all worker threads, free pointers
+	pthread_mutex_destroy(mutex);       //Destroy mutex
 	if(psrvfd!=NULL) free(psrvfd);
 #if !USE_AESD_CHAR_DEVICE
 	remove(DATA_STORAGE_PATH);
 #endif
-	closelog();
-
+	closelog();        //Close syslog
 }
 
-//Very inefficient because of single linked list
+//Unblock + join all worker threads, free linked list pointers
 void releaseThreadResourcesFromList(void) {
 	struct threads_list_node_t *nodep, *tmp;
 	SLIST_FOREACH_SAFE(nodep, &head, nodes, tmp) {
@@ -120,6 +119,22 @@ ssize_t appendToStorage(int* fd, char* data) {
 	return -1;
 }
 
+// Helper function - Send until buffer is completely sent - per assignment requirement.
+// Retry sending if interrupted by a signal.
+// Returns n-bytes sent or -1 on error.
+static ssize_t sendUntilComplete(int cfd, const char* buff, size_t nSend) {
+	size_t totalSent = 0;
+	while (totalSent < nSend) {
+		ssize_t sent=send(cfd, buff+totalSent, nSend-totalSent, MSG_NOSIGNAL);// MSG_NOSIGNAL - if client disconnects, send returns -1 instead of SIGPIPE.
+		if (sent < 0) {
+			if (errno == EINTR) continue;   // interrupted by signal, retry
+			return -1;
+		}
+		totalSent += (size_t)sent;
+	}
+	return (ssize_t)totalSent;
+}
+
 ssize_t appendFromStorageToBuffAndSend(int* cfd, int* fd, char* buff) {
 	ssize_t nRead = 0;
 	ssize_t nSent = 0;
@@ -133,8 +148,12 @@ ssize_t appendFromStorageToBuffAndSend(int* cfd, int* fd, char* buff) {
 	if( 0<*fd ){
 		syslog(LOG_INFO, "Reading aesdchar storage");
 		while( 0<(nRead = read(*fd, buff, BUFFER_SIZE)) ) {
-			nSent=send(*cfd, buff, nRead, 0); //MSG_FASTOPEN
 			nReadTotal+=nRead;
+			nSent = sendUntilComplete(*cfd, buff, nRead);
+			if (nSent < 0) {
+				syslog(LOG_ERR, "send error: %s", strerror(errno));
+				break;
+			}
 			nSentTotal+=nSent;
 		}
 		if(nRead<0) {
@@ -148,7 +167,7 @@ ssize_t appendFromStorageToBuffAndSend(int* cfd, int* fd, char* buff) {
 	*cfd=-1;
 	close(*fd);
 	*fd = -1;
-    return ( nRead<0 ? nRead : nSent );
+    return ( nRead<0 ? nRead : nSentTotal );
 }
 
 // Helper function - Receive until '\n', peer close, or buffer full - per assignment requirement.
@@ -328,6 +347,13 @@ int main(int argc, char** argv){
 		listen(srvfd, LISTEN_BACKLOG);
 		pthread_mutex_init(&mutex, NULL);
 	}
+
+	//Prepare for signal masking while in worker thread
+	sigset_t workerBlockSet, oldSet;
+	sigemptyset(&workerBlockSet);
+	sigaddset(&workerBlockSet, SIGINT);
+	sigaddset(&workerBlockSet, SIGTERM);
+
 #if !USE_AESD_CHAR_DEVICE
 	//init timers for timestamps
 	char timeStampStr[TIMESTAMP_STRLEN] = {'\0'};
@@ -383,7 +409,14 @@ int main(int argc, char** argv){
 			}
 			//init node
 			node->thrData=thd;
-			if (pthread_create(&thd->threadId, NULL, rcvAndSndThread, thd) != 0) {
+
+			// mask signals, new thread inherits this mask, store current state into oldSet
+			pthread_sigmask(SIG_BLOCK, &workerBlockSet, &oldSet);
+			int rc = pthread_create(&thd->threadId, NULL, rcvAndSndThread, thd);
+			// unmask signals, main unblocked again, restore from oldSet
+			pthread_sigmask(SIG_SETMASK, &oldSet, NULL);
+
+			if (rc != 0) {
 				syslog(LOG_ERR, "pthread_create failed");
 				close(cfd);
 				free(thd->dataBuff); free(thd); free(node);
