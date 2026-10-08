@@ -99,7 +99,7 @@ ssize_t appendToStorage(int* fd, char* data) {
 		if( !isIoctl ){
 			res=write(*fd, data, dataLen*sizeof(char));
 			if( res<0 ) {
-				syslog(LOG_INFO, "Append write to aesdchar storage error: %d | Message: %s\n", errno, strerror(errno));
+				syslog(LOG_INFO, "Append write to aesdchar storage error: %d | Message: %s", errno, strerror(errno));
 			}
 		}else {
 			syslog(LOG_INFO, "AESDCHAR_IOCSEEKTO:%d,%d",cmd,off);
@@ -108,7 +108,7 @@ ssize_t appendToStorage(int* fd, char* data) {
 			seekto.write_cmd_offset = off;
 			res = ioctl(*fd, AESDCHAR_IOCSEEKTO, &seekto);
 			if( res<0 ) {
-				syslog(LOG_INFO, "Append ioctl to aesdchar storage error: %d | Message: %s\n", errno, strerror(errno));
+				syslog(LOG_INFO, "Append ioctl to aesdchar storage error: %d | Message: %s", errno, strerror(errno));
 			}
 		}
 		if( !isIoctl ) {
@@ -271,7 +271,7 @@ int daemonize(int srvfd){
 	return 0;
 }
 
-int sigsubscribe(void* handler) {
+int sigsubscribe(void (*handler)(int)){
 	struct sigaction new_action;
 
 	memset(&new_action, 0, sizeof(struct sigaction));
@@ -331,28 +331,20 @@ int main(int argc, char** argv){
 		exit(EXIT_FAILURE);
 	}
 
-	if(!bRun) { //if any errors, close all and exit
-		closeAll(srvfd, psrvfd, &mutex);
+	//Daemonize, subscribe to signals, listen for incoming connections and signals, continue running.
+	if(bDaemon && daemonize(srvfd) != 0) exit(EXIT_FAILURE);
+	if(sigsubscribe(signalHandler) != 0) {
+		syslog(LOG_ERR, "Signal registration failed: %s", strerror(errno));
 		exit(EXIT_FAILURE);
-	} else {    //else daemonize, subscribe to signals, listen for incoming connections and signals, continue running.
-		if(bDaemon && daemonize(srvfd) != 0) exit(EXIT_FAILURE);
-		if(sigsubscribe(signalHandler) != 0) {
-			syslog(LOG_ERR, "Signal registration failed: %s", strerror(errno));
-			exit(EXIT_FAILURE);
-		}
 	}
-
 
 	//listen, accept, connect and respond
 	socklen_t cAddrLen=0;
 	struct sockaddr_in cInfo;
+	listen(srvfd, LISTEN_BACKLOG);
 
-	//listen
 	//prepare for threading - init mutex
-	if(bRun) {
-		listen(srvfd, LISTEN_BACKLOG);
-		pthread_mutex_init(&mutex, NULL);
-	}
+	pthread_mutex_init(&mutex, NULL);
 
 	//Prepare for signal masking while in worker thread
 	sigset_t workerBlockSet, oldSet;

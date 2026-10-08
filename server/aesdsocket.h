@@ -48,8 +48,7 @@ bool isFdOpen(int* fd);
 ssize_t appendToStorage(int* fd, char* data);
 ssize_t appendFromStorageToBuffAndSend(int* cfd, int* fd, char* buff);
 int daemonize(int srvfd);
-int sigsubscribe(void* handler);
-
+int sigsubscribe(void (*handler)(int));
 //threading
 //init thread data struct
 thread_data_t* allocAndInitThreadData(int clientFd, int* storageFd, struct sockaddr_in* cInfo, pthread_mutex_t* mutex);
