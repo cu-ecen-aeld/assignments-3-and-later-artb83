@@ -18,7 +18,7 @@ LDLIBS += -pthread
 all: $(TARGET)
 
 $(TARGET): $(OBJS)
-	$(CC) $(CFLAGS) $(OBJS) $(LDLIBS) -o $@
+	$(CC) $(CFLAGS) $(OBJS) $(LDFLAGS) $(LDLIBS) -o $@
 
 %.o:%.c $(HFILES)
 	$(CC) $(CFLAGS) -c $< -o $@
