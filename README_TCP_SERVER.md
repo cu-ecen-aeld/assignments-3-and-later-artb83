@@ -3,11 +3,19 @@
 ## Description
 A multithreaded TCP server daemon plus a Linux char-device driver based on circular buffer with ioctl seek.
 ## Location
-TCP server at _/server_, char-device driver at _/aesd-char-driver_
+TCP server at **_./server_**, char-device driver at **_./aesd-char-driver_**
 ## How to build
-To build the server (aesdsocket) application natively use make. Cross-compiling with CROSS_COMPILE=aarch64-none-linux-gnu-, or through the Yocto layer.
+To build the server (aesdsocket) application natively:  
+`cd server`  
+`make`  
+Cross-compiling with CROSS_COMPILE=aarch64-none-linux-gnu-   
+`make CROSS_COMPILE=aarch64-none-linux-gnu-`  
+*Or through the Yocto layer.*  
+To build the char-device:  
+`cd aesd-char-driver`  
+`make modules`
 ## How to test
-`cd /server` folder, run:  
+`cd ./server` folder, run:  
 `sudo ./reload_aesdchar_driver_run_tcpserver -a
 `
 ### Yocto integration
