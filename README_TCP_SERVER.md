@@ -1,7 +1,10 @@
-# TCP server and Linux char-device driver review details
+# TCP server and Linux char-device driver details
 **Built as part of the University of Colorado Advanced Embedded Linux course.**
 ## Description
-A multithreaded TCP server daemon plus a Linux char-device driver based on circular buffer with ioctl seek.
+Multithreaded TCP server daemon in C on Linux (POSIX sockets, pthreads, poll):  
+receives newline-framed client messages, forwards them to a custom Linux char-device driver,  
+that is based on circular buffer, handles seek commands via ioctl,  
+and streams the device content back to the client.  
 ## Location
 TCP server at **_./server_**, char-device driver at **_./aesd-char-driver_**
 ## How to build
